@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>이메일 인증</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<main>
+  <h1>이메일 인증</h1>
+
+  <p id="message" role="status"></p>
+
+  <p><a href="/login.html">로그인</a></p>
+</main>
+
+<!-- /email/verification/482913 같은 깊은 주소로 열리므로 경로는 절대경로로 쓴다. -->
+<script src="/auth.js"></script>
+<script>
+setupEmailVerification();
+</script>
+
+</body>
+</html>

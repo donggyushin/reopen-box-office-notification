@@ -3,11 +3,13 @@
 회원가입 / 로그인 페이지. 빌드 도구 없이 HTML/CSS/JS 파일만으로 동작합니다.
 
 ```
-index.html   회원가입
-login.html   로그인
-home.html    로그인 후 화면
-auth.js      API 호출, 토큰 저장, 폼 처리 (세 페이지 공용)
-style.css    스타일
+index.html          회원가입
+login.html          로그인
+home.html           로그인 후 화면
+verification.html   이메일 인증 (메일 링크로 진입)
+auth.js             API 호출, 토큰 저장, 폼 처리 (전 페이지 공용)
+style.css           스타일
+vercel.json         /email/verification/:code → /verification.html rewrite
 ```
 
 가입이나 로그인에 성공하면 토큰을 `localStorage`에 저장하고 `home.html`로 이동합니다.
@@ -21,9 +23,12 @@ python3 -m http.server 8000
 
 후 http://localhost:8000 접속. (`file://`로 열면 API 호출이 CORS로 막힙니다.)
 
+이메일 인증 화면은 로컬에 rewrite가 없으므로
+http://localhost:8000/verification.html?code=482913 처럼 쿼리로 확인합니다.
+
 ## 배포 (Vercel)
 
-정적 사이트라 별도 설정이 필요 없습니다.
+정적 사이트라 빌드 설정은 필요 없고, `vercel.json`에 rewrite 한 줄만 있습니다.
 
 ```
 npm i -g vercel
@@ -46,11 +51,15 @@ var API_BASE = "https://donggyu-sworld-production.up.railway.app";
 |---|---|---|
 | 회원가입 | `POST /users` `{ email, password }` | `201` `{ accessToken, refreshToken }` |
 | 로그인 | `POST /users/login` `{ email, password }` | `201` `{ accessToken, refreshToken }` |
+| 이메일 인증 | `POST /users/verify/email` `{ code }` | `{ success: true }` |
 
 실패 응답은 `{ message, error, statusCode }` 형태이고, `message`는 문자열이거나
 검증 오류 배열(`["email must be an email", ...]`)입니다. 둘 다 화면에 그대로 표시합니다.
 
 비밀번호 8자 제한은 서버에서 검증하며, 회원가입 폼에서도 같은 기준으로 먼저 걸러냅니다.
+
+가입하면 메일로 `/email/verification/<코드>` 링크가 갑니다. 이 주소로 들어오면
+`verification.html`이 열리면서 경로 끝의 코드를 그대로 인증 API에 보냅니다.
 
 ## 알아둘 점
 

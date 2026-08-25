@@ -39,12 +39,13 @@ with a handful of classes. Resist adding visual polish.
 
 ## Architecture
 
-Three pages plus one shared script:
+Four pages plus one shared script:
 
 ```
-index.html   회원가입   ─┐
-login.html   로그인     ─┴─→ auth.js → home.html
-home.html    로그인 후 화면
+index.html          회원가입   ─┐
+login.html          로그인     ─┴─→ auth.js → home.html
+home.html           로그인 후 화면
+verification.html   이메일 인증 (메일 링크로 진입)
 ```
 
 `auth.js` is the whole application layer. The non-obvious part is
@@ -62,6 +63,14 @@ store tokens, go to `home.html`. `home.html` is the guard — no `accessToken` i
 `readEmail()` base64-decodes the JWT payload for display only. Signature verification is
 the server's job; never treat the decoded contents as trusted.
 
+**`verification.html` is served from a path it does not live at.** The mail link is
+`/email/verification/<code>`; `vercel.json` rewrites that to `/verification.html`, and
+`readVerificationCode()` takes the code from the last path segment. Two consequences:
+the page must reference `/auth.js` and `/style.css` with absolute paths (relative ones
+would resolve under `/email/verification/`), and the local `http.server` has no rewrite,
+so test it as `verification.html?code=<code>` — the query form is the fallback branch in
+`readVerificationCode()`, not a second feature.
+
 ## Backend
 
 `API_BASE` at the top of `auth.js` is the only place the backend URL appears.
@@ -70,6 +79,7 @@ the server's job; never treat the decoded contents as trusted.
 |---|---|---|
 | 회원가입 | `POST /users` `{ email, password }` | `201` `{ accessToken, refreshToken }` |
 | 로그인 | `POST /users/login` `{ email, password }` | `201` `{ accessToken, refreshToken }` |
+| 이메일 인증 | `POST /users/verify/email` `{ code }` | `{ success: true }` |
 
 Errors come back as `{ message, error, statusCode }` where **`message` is either a string
 or an array** of validation strings. `messageFrom()` in `auth.js` handles both; anything

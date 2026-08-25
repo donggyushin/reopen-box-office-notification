@@ -137,3 +137,77 @@ function setupCredentialForm(options) {
       });
   });
 }
+
+// URL에서 이메일 인증 코드를 꺼낸다.
+// 실주소는 /email/verification/482913 형태이고, 로컬 정적 서버에는 rewrite가
+// 없으므로 verification.html?code=482913도 함께 받는다.
+function readVerificationCode() {
+  var matched = location.search.match(/[?&]code=([^&]*)/);
+  if (matched) {
+    return decodeURIComponent(matched[1]);
+  }
+
+  var segments = location.pathname.split("/");
+  var last = segments[segments.length - 1];
+
+  // 마지막 조각이 비어 있거나 파일 이름이면 코드가 없는 주소다.
+  if (!last || last.indexOf(".") !== -1) {
+    return "";
+  }
+  return decodeURIComponent(last);
+}
+
+// 이메일 인증 페이지를 API에 연결한다.
+// verification.html이 message 요소를 선언하고 이 함수를 호출한다.
+function setupEmailVerification() {
+  var message = document.getElementById("message");
+
+  function show(text, isError) {
+    message.textContent = text;
+    message.className = isError ? "error" : "ok";
+  }
+
+  var code = readVerificationCode();
+
+  if (!code) {
+    show("인증 코드가 없는 주소입니다. 메일의 링크를 다시 확인해 주세요.", true);
+    return;
+  }
+
+  show("인증 중...", false);
+
+  fetch(API_BASE + "/users/verify/email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: code })
+  })
+    .then(function (response) {
+      return response.text().then(function (body) {
+        return { ok: response.ok, status: response.status, body: body };
+      });
+    })
+    .then(function (result) {
+      if (!result.ok) {
+        show(messageFrom(result.body, result.status), true);
+        return;
+      }
+
+      var data = {};
+      try {
+        data = JSON.parse(result.body);
+      } catch (e) {
+        data = {};
+      }
+
+      if (data.success) {
+        show("이메일 인증이 완료되었습니다.", false);
+        return;
+      }
+
+      // 200인데 success가 아닌 경우 — 응답 형식이 바뀐 것이므로 그대로 알린다.
+      show(messageFrom(result.body, result.status), true);
+    })
+    .catch(function () {
+      show("서버에 연결할 수 없습니다.", true);
+    });
+}
