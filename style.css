@@ -1,0 +1,76 @@
+body {
+  font-family: arial, sans-serif;
+  font-size: 14px;
+  color: #000;
+  background: #fff;
+  margin: 0;
+}
+
+main {
+  max-width: 320px;
+  margin: 60px auto;
+  padding: 0 16px;
+}
+
+h1 {
+  font-size: 20px;
+  font-weight: normal;
+  margin: 0 0 24px;
+}
+
+label {
+  font-size: 13px;
+}
+
+input {
+  font-family: inherit;
+  font-size: 14px;
+  width: 100%;
+  padding: 4px;
+  border: 1px solid #999;
+  box-sizing: border-box;
+}
+
+input:focus {
+  border-color: #333;
+  outline: none;
+}
+
+small {
+  color: #666;
+  font-size: 12px;
+}
+
+button {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 4px 12px;
+  border: 1px solid #999;
+  background: #eee;
+  cursor: pointer;
+}
+
+button:disabled {
+  color: #999;
+  cursor: default;
+}
+
+a {
+  color: #00c;
+}
+
+#message:empty {
+  display: none;
+}
+
+#message {
+  font-size: 13px;
+}
+
+.error {
+  color: #c00;
+}
+
+.ok {
+  color: #060;
+}

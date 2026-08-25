@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>홈</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<main>
+  <h1>홈</h1>
+
+  <p id="greeting"></p>
+
+  <p>
+    <button type="button" id="logout">로그아웃</button>
+  </p>
+</main>
+
+<script src="auth.js"></script>
+<script>
+var token = localStorage.getItem("accessToken");
+
+// 토큰이 없으면 로그인하지 않은 상태로 보고 로그인 페이지로 보낸다.
+if (!token) {
+  location.replace("login.html");
+} else {
+  var email = readEmail(token);
+  document.getElementById("greeting").textContent =
+    email ? email + " 님으로 로그인되었습니다." : "로그인되었습니다.";
+}
+
+document.getElementById("logout").addEventListener("click", function () {
+  clearTokens();
+  location.replace("login.html");
+});
+</script>
+
+</body>
+</html>

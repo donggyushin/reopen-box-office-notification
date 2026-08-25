@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>로그인</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<main>
+  <h1>로그인</h1>
+
+  <form id="auth-form" novalidate>
+    <p>
+      <label for="email">이메일</label><br>
+      <input type="email" id="email" name="email" autocomplete="email" required>
+    </p>
+
+    <p>
+      <label for="password">비밀번호</label><br>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+    </p>
+
+    <p>
+      <button type="submit" id="submit">로그인</button>
+    </p>
+  </form>
+
+  <p id="message" role="status"></p>
+
+  <p><a href="index.html">계정 만들기</a></p>
+</main>
+
+<script src="auth.js"></script>
+<script>
+setupCredentialForm({
+  path: "/users/login",
+  pendingText: "로그인 중..."
+});
+</script>
+
+</body>
+</html>

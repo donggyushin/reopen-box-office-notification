@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>회원가입</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<main>
+  <h1>회원가입</h1>
+
+  <form id="auth-form" novalidate>
+    <p>
+      <label for="email">이메일</label><br>
+      <input type="email" id="email" name="email" autocomplete="email" required>
+    </p>
+
+    <p>
+      <label for="password">비밀번호</label><br>
+      <input type="password" id="password" name="password" autocomplete="new-password" required>
+      <br><small>8자 이상</small>
+    </p>
+
+    <p>
+      <button type="submit" id="submit">가입하기</button>
+    </p>
+  </form>
+
+  <p id="message" role="status"></p>
+
+  <p><a href="login.html">이미 계정이 있으신가요?</a></p>
+</main>
+
+<script src="auth.js"></script>
+<script>
+setupCredentialForm({
+  path: "/users",
+  minPassword: 8,
+  pendingText: "가입 중..."
+});
+</script>
+
+</body>
+</html>
