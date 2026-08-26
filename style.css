@@ -107,3 +107,103 @@ td button {
 .ok {
   color: #060;
 }
+
+/* 여기서부터는 재개봉 알림을 켜는 그 한 순간에만 쓰는 것들이다.
+   나머지 화면은 계속 꾸미지 않는다 — 이 자리만 예외로 둔 이유는, 누른 뒤
+   2.5초 동안 아무 일도 없는 것처럼 보이면 안 되기 때문이다. */
+
+/* 진행 막대. 남은 시간을 알 수 없으니 채우지 않고 훑고 지나간다. */
+.progress {
+  display: inline-block;
+  vertical-align: middle;
+  position: relative;
+  width: 88px;
+  height: 3px;
+  background: #eee;
+  overflow: hidden;
+}
+
+.progress::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(90deg, #bcd, #060);
+  animation: sweep 1.15s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(350%);
+  }
+}
+
+.pending {
+  margin-left: 8px;
+  color: #666;
+  animation: breathe 1.15s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* 체크 표시는 선을 따라 그려진다. 끝났다는 신호는 값이 바뀌는 것만으로도
+   전해지지만, 기다린 만큼의 마무리는 있어야 한다. */
+.check {
+  width: 13px;
+  height: 13px;
+  vertical-align: -2px;
+  margin-right: 5px;
+}
+
+.check path {
+  fill: none;
+  stroke: #060;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 16;
+  stroke-dashoffset: 16;
+  animation: draw 0.45s 0.05s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.settled {
+  display: inline-block;
+  color: #060;
+  animation: rise 0.35s 0.2s ease-out both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* 움직임을 줄여 달라고 한 사람에게는 결과만 남긴다. */
+@media (prefers-reduced-motion: reduce) {
+  .progress::after,
+  .pending,
+  .settled {
+    animation: none;
+  }
+
+  .check path {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}

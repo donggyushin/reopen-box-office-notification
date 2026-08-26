@@ -42,7 +42,10 @@ TypeScript, or a package manager unless asked. `auth.js` is loaded with a plain
 
 **Keep the design austere.** The target look is early-Google: Arial, black text, gray
 1px borders, no shadows/gradients/animation/icons. `style.css` is element-selector-based
-with a handful of classes. Resist adding visual polish.
+with a handful of classes. Resist adding visual polish. The one sanctioned exception is
+the block at the bottom of `style.css` — `.progress`, `.pending`, `.check`, `.settled` —
+which exists only for the 재개봉 알림 row. It is a deliberate accent, not the start of a
+theme: an animation added anywhere else has no such warrant.
 
 ## Architecture
 
@@ -91,14 +94,33 @@ resend button that POSTs to `/users/email/verification`.
 재개봉 알림 are there — the states this person can still do something about. `id`,
 `name`, `createdAt`, and `isAdmin` come back from the API and are deliberately dropped,
 and `email` already appears in the greeting above. Adding a field to the response should
-not add a row by default. Verification finishes in the
-mail link, not on this page, so the success message tells the user to reload — the page
+not add a row by default. The 재개봉 알림 row is not a control at all: when
+`isEmailVerified` is true and `receiveReopenBoxOfficeNotifications` is false, drawing the
+row fires the PATCH itself. Both conditions matter — turning notifications on before the
+address is verified points them at nowhere, so an unverified visitor's next step is the
+row above. Verification finishes in the mail link, not on this page, so the success message tells the user to reload — the page
 has no way to observe the result on its own. It paints the JWT email immediately so the page is never blank,
 then overwrites it with the `/users/me` response — the token is display-only scaffolding,
 the API answer is the truth. Its three failure paths are deliberately different: a 401
 that survived the retry clears tokens and redirects, a non-ok response shows the server's
 message and stays put, and a rejected `fetch` shows a connection error without touching
 the session.
+
+**`enableReopenNotifications()` asks nobody, and stalls on purpose.** Someone who signed
+up for reopening alerts has already answered the question a confirm button would ask, so
+the page does not ask it again — it PATCHes
+`/users/receive-reopen-box-office-notifications` with `{ value: true }` as soon as the
+row is drawn. Because nothing was clicked, the change has to be visible on its own: the
+function takes over the value cell with a sweeping progress bar for a floor of 2500ms —
+`MIN_PENDING_MS` — even when the server answers instantly, then settles into a drawn
+checkmark, "받는 중", and a line in `#message`. Do not shorten the floor to match the
+server; a value that flips the instant the page loads reads as markup, not as something
+that just happened. The floor is enforced by
+`Promise.all([settled, wait(MIN_PENDING_MS)])`, where `settled` resolves to `{result}` or
+`{failed}` rather than rejecting — a rejection would break `Promise.all` early and let
+the failure path skip the wait. Failure leaves the cell reading "받지 않음" with the
+reason in `#message` and offers no retry control: the next attempt is a reload, and this
+row is not a place to press things.
 
 **`verification.html` is served from a path it does not live at.** The mail link is
 `/email/verification/<code>`; `vercel.json` rewrites that to `/verification.html`, and
@@ -164,6 +186,7 @@ branch, and a local backend must allow CORS from `http://localhost:8000`.
 | 토큰 재발급 | `POST /auth/refresh-token` `{ refreshToken }` | `201` `{ accessToken, refreshToken }` |
 | 내 정보 | `GET /users/me` (Bearer) | `200` `{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications }` |
 | 인증 메일 재발송 | `POST /users/email/verification` (Bearer, 바디 없음) | `201` |
+| 재개봉 알림 설정 | `PATCH /users/receive-reopen-box-office-notifications` (Bearer) `{ value }` | `200` |
 
 Errors come back as `{ message, error, statusCode }` where **`message` is either a string
 or an array** of validation strings. `messageFrom()` in `auth.js` handles both; anything

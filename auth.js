@@ -339,6 +339,115 @@ function verificationEmailButton(show, onDead, successText) {
   return button;
 }
 
+// 재개봉 알림을 켠다. 홈이 표를 그리다가 "이메일 인증은 끝났는데 알림은 꺼져
+// 있는" 사람을 만나면 바로 부른다 — 물어보지 않는다. 알림을 받으러 가입한
+// 사람에게 "받으시겠습니까"는 한 번 더 누르게 만드는 절차일 뿐이다.
+// 값 칸을 통째로 맡아 끝날 때까지 그 자리에서 진행 상태를 보여준다.
+// show(text, isError)로 실패를 알리고, 세션이 끝났으면 onDead()를 부른다.
+function enableReopenNotifications(cell, show, onDead) {
+  var PATH = "/users/receive-reopen-box-office-notifications";
+
+  // 서버가 아무리 빨리 답해도 이만큼은 진행 표시를 띄운 채로 둔다.
+  // 누른 적도 없는 값이 소리 없이 바뀌면 무슨 일이 있었는지 알 수 없다.
+  var MIN_PENDING_MS = 2500;
+
+  function element(name, className, text) {
+    var node = document.createElement(name);
+    if (className) {
+      node.className = className;
+    }
+    if (text) {
+      node.textContent = text;
+    }
+    return node;
+  }
+
+  // 체크 표시는 선을 그리며 나타난다. 이 화면에서 유일하게 움직이는 자리다.
+  function checkMark() {
+    var ns = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("class", "check");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+
+    var path = document.createElementNS(ns, "path");
+    path.setAttribute("d", "M3.5 8.5 L6.8 11.8 L12.5 4.8");
+    svg.appendChild(path);
+    return svg;
+  }
+
+  function showDone() {
+    cell.textContent = "";
+    cell.appendChild(checkMark());
+    cell.appendChild(element("span", "settled", "받는 중"));
+  }
+
+  // 켜지 못했으면 표는 사실대로 꺼진 상태를 보여준다.
+  // 다시 시도할 길은 새로고침이다 — 이 화면에는 누를 것을 두지 않는다.
+  function showOff() {
+    cell.textContent = "받지 않음";
+  }
+
+  function wait(ms) {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, ms);
+    });
+  }
+
+  cell.textContent = "";
+  cell.appendChild(element("span", "progress"));
+  cell.appendChild(element("span", "pending", "켜는 중"));
+
+  // 요청이 거절되어도 Promise.all이 먼저 깨지지 않도록 결과를 값으로 눕힌다.
+  // 그래야 성공이든 실패든 최소 대기 시간이 똑같이 지켜진다.
+  var settled = authorizedFetch(PATH, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value: true })
+  })
+    .then(function (response) {
+      return response.text().then(function (body) {
+        return {
+          result: { ok: response.ok, status: response.status, body: body }
+        };
+      });
+    })
+    .catch(function (error) {
+      return { failed: error };
+    });
+
+  Promise.all([settled, wait(MIN_PENDING_MS)]).then(function (values) {
+    var outcome = values[0];
+
+    if (outcome.failed) {
+      // 재발급이 거절되면 토큰이 이미 지워져 있다. 연결 실패와 그걸 가른다.
+      if (!localStorage.getItem("accessToken")) {
+        onDead();
+        return;
+      }
+      showOff();
+      show("재개봉 알림을 켜지 못했습니다. 서버에 연결할 수 없습니다.", true);
+      return;
+    }
+
+    var result = outcome.result;
+
+    if (result.status === 401) {
+      onDead();
+      return;
+    }
+
+    if (!result.ok) {
+      showOff();
+      show(messageFrom(result.body, result.status), true);
+      return;
+    }
+
+    showDone();
+    show("재개봉 알림을 켰습니다.", false);
+  });
+}
+
 // 로그인 후 화면을 API에 연결한다.
 // home.html이 greeting/profile/message/logout 요소를 선언하고 이 함수를 호출한다.
 function setupHome() {
@@ -423,11 +532,16 @@ function setupHome() {
         )
       );
     }
-    addRow(
+    var notifyCell = addRow(
       table,
       "재개봉 알림",
       me.receiveReopenBoxOfficeNotifications ? "받는 중" : "받지 않음"
     );
+    // 인증을 마쳤는데 알림이 꺼져 있으면 그 자리에서 켠다. 인증 전이라면
+    // 켜 봐야 보낼 곳이 없으니, 그 사람의 다음 할 일은 위 줄에 있다.
+    if (me.isEmailVerified && !me.receiveReopenBoxOfficeNotifications) {
+      enableReopenNotifications(notifyCell, show, toLogin);
+    }
 
     profile.textContent = "";
     profile.appendChild(table);
