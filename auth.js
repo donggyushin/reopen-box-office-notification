@@ -264,6 +264,130 @@ function setupCredentialForm(options) {
   });
 }
 
+// ISO 날짜를 사람이 읽는 형태로 바꾼다. 파싱이 안 되면 원본을 그대로 둔다.
+function formatDate(value) {
+  var date = new Date(value);
+  if (!value || isNaN(date.getTime())) {
+    return value || "";
+  }
+  return (
+    date.getFullYear() +
+    "년 " +
+    (date.getMonth() + 1) +
+    "월 " +
+    date.getDate() +
+    "일"
+  );
+}
+
+// 로그인 후 화면을 API에 연결한다.
+// home.html이 greeting/profile/message/logout 요소를 선언하고 이 함수를 호출한다.
+function setupHome() {
+  var greeting = document.getElementById("greeting");
+  var profile = document.getElementById("profile");
+  var message = document.getElementById("message");
+  var logout = document.getElementById("logout");
+
+  function show(text, isError) {
+    message.textContent = text;
+    message.className = isError ? "error" : "ok";
+  }
+
+  function toLogin() {
+    clearTokens();
+    location.replace("login.html");
+  }
+
+  logout.addEventListener("click", toLogin);
+
+  // 토큰이 아예 없으면 물어볼 것도 없이 로그인 페이지로 보낸다.
+  if (!localStorage.getItem("accessToken") && !localStorage.getItem("refreshToken")) {
+    location.replace("login.html");
+    return;
+  }
+
+  // 표를 한 줄씩 채운다. 값이 없는 칸은 빈 칸으로 둔다.
+  function addRow(table, label, value) {
+    var row = table.insertRow();
+    var head = document.createElement("th");
+    head.textContent = label;
+    row.appendChild(head);
+    row.insertCell().textContent = value == null ? "" : String(value);
+  }
+
+  function showProfile(me) {
+    greeting.textContent = me.email
+      ? me.email + " 님으로 로그인되었습니다."
+      : "로그인되었습니다.";
+
+    var table = document.createElement("table");
+    addRow(table, "회원 번호", me.id);
+    addRow(table, "이메일", me.email);
+    addRow(table, "이름", me.name || "등록하지 않음");
+    addRow(table, "가입일", formatDate(me.createdAt));
+    addRow(table, "이메일 인증", me.isEmailVerified ? "완료" : "미완료");
+    addRow(
+      table,
+      "재개봉 알림",
+      me.receiveReopenBoxOfficeNotifications ? "받는 중" : "받지 않음"
+    );
+
+    // 관리자가 아닌 사람에게는 의미 없는 줄이므로 참일 때만 보여준다.
+    if (me.isAdmin) {
+      addRow(table, "관리자", "예");
+    }
+
+    profile.textContent = "";
+    profile.appendChild(table);
+  }
+
+  // 응답을 기다리는 동안 화면이 비지 않도록 토큰 안의 이메일을 먼저 띄운다.
+  // 표시용일 뿐이고, 확정된 정보는 /users/me 응답으로 덮어쓴다.
+  var stored = localStorage.getItem("accessToken");
+  var email = stored ? readEmail(stored) : "";
+  greeting.textContent = email
+    ? email + " 님으로 로그인되었습니다."
+    : "로그인되었습니다.";
+  profile.textContent = "불러오는 중...";
+
+  authorizedFetch("/users/me")
+    .then(function (response) {
+      return response.text().then(function (body) {
+        return { ok: response.ok, status: response.status, body: body };
+      });
+    })
+    .then(function (result) {
+      if (result.status === 401) {
+        // 재발급까지 하고도 거절당했다면 세션이 끝난 것이다.
+        toLogin();
+        return;
+      }
+
+      if (!result.ok) {
+        profile.textContent = "";
+        show(messageFrom(result.body, result.status), true);
+        return;
+      }
+
+      var me = {};
+      try {
+        me = JSON.parse(result.body);
+      } catch (e) {
+        me = {};
+      }
+      showProfile(me);
+    })
+    .catch(function () {
+      // 재발급이 거절되면 토큰이 이미 지워져 있다. 그때는 로그인부터 다시 한다.
+      if (!localStorage.getItem("accessToken")) {
+        location.replace("login.html");
+        return;
+      }
+      profile.textContent = "";
+      show("서버에 연결할 수 없습니다.", true);
+    });
+}
+
 // URL에서 이메일 인증 코드를 꺼낸다.
 // 실주소는 /email/verification/482913 형태이고, 로컬 정적 서버에는 rewrite가
 // 없으므로 verification.html?code=482913도 함께 받는다.

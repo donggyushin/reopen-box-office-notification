@@ -59,6 +59,26 @@ a {
   color: #00c;
 }
 
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0 0 16px;
+}
+
+th, td {
+  font-size: 13px;
+  font-weight: normal;
+  text-align: left;
+  vertical-align: top;
+  padding: 5px 0;
+  border-bottom: 1px solid #ddd;
+}
+
+th {
+  color: #666;
+  width: 40%;
+}
+
 #message:empty {
   display: none;
 }

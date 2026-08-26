@@ -13,6 +13,10 @@
 
   <p id="greeting"></p>
 
+  <div id="profile"></div>
+
+  <p id="message" role="status"></p>
+
   <p>
     <button type="button" id="logout">로그아웃</button>
   </p>
@@ -20,31 +24,7 @@
 
 <script src="auth.js"></script>
 <script>
-var greeting = document.getElementById("greeting");
-
-// 토큰이 아예 없으면 물어볼 것도 없이 로그인 페이지로 보낸다.
-if (!localStorage.getItem("accessToken") && !localStorage.getItem("refreshToken")) {
-  location.replace("login.html");
-} else {
-  greeting.textContent = "확인 중...";
-
-  // accessToken이 만료되었으면 refreshToken으로 조용히 새로 받는다.
-  // 재발급까지 실패하면 그때 로그인 페이지로 보낸다.
-  ensureAccessToken()
-    .then(function (token) {
-      var email = readEmail(token);
-      greeting.textContent =
-        email ? email + " 님으로 로그인되었습니다." : "로그인되었습니다.";
-    })
-    .catch(function () {
-      location.replace("login.html");
-    });
-}
-
-document.getElementById("logout").addEventListener("click", function () {
-  clearTokens();
-  location.replace("login.html");
-});
+setupHome();
 </script>
 
 </body>

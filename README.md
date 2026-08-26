@@ -13,7 +13,8 @@ vercel.json         /email/verification/:code → /verification.html rewrite
 ```
 
 가입이나 로그인에 성공하면 토큰을 `localStorage`에 저장하고 `home.html`로 이동합니다.
-`home.html`은 토큰이 없거나 재발급까지 실패하면 `login.html`로 되돌립니다.
+`home.html`은 `GET /users/me`로 내 정보를 불러와 보여주고, 토큰이 없거나 재발급까지
+실패하면 `login.html`로 되돌립니다.
 
 ## 로컬에서 보기
 
@@ -53,6 +54,7 @@ var API_BASE = "https://donggyu-sworld-production.up.railway.app";
 | 로그인 | `POST /users/login` `{ email, password }` | `201` `{ accessToken, refreshToken }` |
 | 이메일 인증 | `POST /users/verify/email` `{ code }` | `{ success: true }` |
 | 토큰 재발급 | `POST /auth/refresh-token` `{ refreshToken }` | `201` `{ accessToken, refreshToken }` |
+| 내 정보 | `GET /users/me` (Bearer) | `200` `{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications }` |
 
 실패 응답은 `{ message, error, statusCode }` 형태이고, `message`는 문자열이거나
 검증 오류 배열(`["email must be an email", ...]`)입니다. 둘 다 화면에 그대로 표시합니다.
