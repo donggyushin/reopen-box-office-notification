@@ -108,6 +108,113 @@ td button {
   color: #060;
 }
 
+/* 여기서부터 .tag 까지는 홈의 박스오피스 차트에만 쓴다. 막대는 크기 비교만
+   맡고 관객수는 그 옆에 숫자로 그대로 적는다 — 1위와 10위가 백 배 넘게
+   벌어지는 값이라, 막대만 남기면 아래쪽 몇 줄은 읽을 수 없다. */
+
+h2 {
+  font-size: 13px;
+  font-weight: normal;
+  color: #666;
+  margin: 0 0 6px;
+}
+
+/* 오늘의 재개봉작. 표 안에서는 열 줄 중 한 줄이라 맨 위에 한 번 더 적는다.
+   아직 아무것도 모르는 동안에는 자리도 만들지 않는다. */
+#reopen:empty {
+  display: none;
+}
+
+#reopen {
+  border: 1px solid #999;
+  padding: 8px 10px;
+  margin: 0 0 24px;
+}
+
+#reopen p {
+  font-size: 13px;
+  margin: 6px 0 0;
+}
+
+#reopen small {
+  display: block;
+}
+
+#chart p {
+  font-size: 13px;
+  margin: 24px 0 0;
+}
+
+.chart {
+  margin: 24px 0 16px;
+}
+
+.chart caption {
+  text-align: left;
+  color: #666;
+  font-size: 13px;
+  padding: 0 0 6px;
+}
+
+.chart td {
+  padding: 6px 0;
+}
+
+.chart .rank,
+.chart .count {
+  color: #666;
+  font-size: 12px;
+}
+
+.chart .rank {
+  width: 18px;
+}
+
+.chart .count {
+  width: 58px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.chart .name {
+  font-size: 13px;
+}
+
+/* 막대. 관객이 있었던 줄은 아무리 작아도 자국은 남게 둔다. */
+.chart .bar {
+  height: 6px;
+  margin: 3px 0 0;
+  background: #eee;
+}
+
+.chart .bar span {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  background: #999;
+}
+
+/* 재개봉작 줄. 이 서비스가 알려 주겠다고 한 것이라 표 안에서도 눈에 띄게 둔다.
+   색은 체크 표시와 같은 초록이다 — 이 화면에서 초록은 계속 같은 뜻이다. */
+.chart .reopen .name,
+#reopen .name {
+  color: #060;
+}
+
+.chart .reopen .bar span {
+  background: #060;
+}
+
+/* 색만으로는 무슨 표시인지 알 수 없으니 말도 같이 적는다. */
+.tag {
+  border: 1px solid #060;
+  color: #060;
+  font-size: 11px;
+  padding: 0 3px;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
 /* 여기서부터는 홈 화면 표의 값 칸에만 쓰는 것들이다. 나머지 화면은 계속
    꾸미지 않는다 — 이 자리만 예외로 둔 이유가 둘 있다.
 

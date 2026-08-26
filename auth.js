@@ -467,13 +467,181 @@ function enableReopenNotifications(cell, show, onDead) {
   });
 }
 
+// 일별 박스오피스 순위를 홈에 그린다. chart 는 표가 들어갈 자리이고, highlight 는
+// 그중 재개봉작만 한 번 더 적는 맨 위 자리다.
+//
+// 여기서는 authorizedFetch() 를 쓰지 않는다. 이 순위는 로그인과 상관없는 공개
+// 자료라 토큰을 붙일 이유가 없고, 무엇보다 순위를 못 불러온 일이 세션을 끝내면
+// 안 되기 때문이다. 그래서 실패도 이 자리에만 적는다 — #message 는 위 표가 쓰는
+// 자리이고, 토큰은 어느 갈래에서도 건드리지 않는다.
+function loadBoxOffice(chart, highlight) {
+  var PATH = "/box-office/daily";
+
+  function element(name, className, text) {
+    var node = document.createElement(name);
+    if (className) {
+      node.className = className;
+    }
+    if (text) {
+      node.textContent = text;
+    }
+    return node;
+  }
+
+  function number(value) {
+    var n = Number(value);
+    if (value == null || value === "" || !isFinite(n)) {
+      return "";
+    }
+    return n.toLocaleString("ko-KR");
+  }
+
+  // 표 대신 한 줄만 남는 경우들. 맨 위 자리는 손대지 않는다 — 순위를 모르는데
+  // "재개봉작이 없다"고 적으면 없는 것을 아는 것처럼 보인다.
+  function note(text, isError) {
+    chart.textContent = "";
+    chart.appendChild(element("p", isError ? "error" : null, text));
+  }
+
+  // 재개봉작은 열 줄 중 한 줄이라 표 안에서는 찾아야 보인다. 이 서비스가
+  // 알려 주겠다고 한 것이 그 한 줄이니 맨 위에 한 번 더 적는다. 없는 날에는
+  // 없다고 적는다 — 빈 자리는 오늘 순위를 못 불러온 것과 구별되지 않는다.
+  function drawHighlight(reopens) {
+    highlight.textContent = "";
+    highlight.appendChild(element("h2", null, "재개봉작"));
+
+    if (!reopens.length) {
+      highlight.appendChild(
+        element("p", null, "오늘 순위에 재개봉 영화는 없습니다.")
+      );
+      return;
+    }
+
+    reopens.forEach(function (movie) {
+      var line = element("p", null);
+      line.appendChild(element("span", "name", movie.movieNm || "제목 없음"));
+      if (movie.rank != null) {
+        line.appendChild(document.createTextNode(" " + movie.rank + "위"));
+      }
+
+      // 재개봉작에서 개봉일은 그 자체로 읽을 거리다. 오늘 관객수는 표에도
+      // 있지만, 여기까지 보고 표로 내려가지 않는 사람이 있다.
+      var detail = [];
+      if (movie.openDt) {
+        detail.push(movie.openDt + " 개봉");
+      }
+      var audience = number(movie.audiCnt);
+      if (audience) {
+        detail.push("오늘 관객 " + audience + "명");
+      }
+      if (detail.length) {
+        line.appendChild(element("small", null, detail.join(" · ")));
+      }
+
+      highlight.appendChild(line);
+    });
+  }
+
+  function drawChart(list) {
+    // 막대는 1위를 가득 채운 것으로 두고 나머지를 그 비율로 그린다. 관객수는
+    // 1위와 10위가 백 배 넘게 벌어지는 값이라 아래쪽 막대는 자국만 남는다.
+    // 그래서 숫자를 막대 옆에 그대로 적었다 — 막대는 크기 비교만 맡는다.
+    var top = 0;
+    list.forEach(function (movie) {
+      var n = Number(movie.audiCnt);
+      if (isFinite(n) && n > top) {
+        top = n;
+      }
+    });
+
+    var table = element("table", "chart");
+    table.appendChild(element("caption", null, "일별 박스오피스 · 관객수"));
+
+    list.forEach(function (movie) {
+      var row = table.insertRow();
+      if (movie.isReopen) {
+        row.className = "reopen";
+      }
+
+      var rank = row.insertCell();
+      rank.className = "rank";
+      rank.textContent = movie.rank == null ? "" : String(movie.rank);
+
+      var cell = row.insertCell();
+      var name = element("div", "name", movie.movieNm || "제목 없음");
+      // 색만으로는 무슨 표시인지 알 수 없으니 말도 같이 붙인다.
+      if (movie.isReopen) {
+        name.appendChild(element("span", "tag", "재개봉"));
+      }
+      cell.appendChild(name);
+
+      var bar = element("div", "bar");
+      var value = Number(movie.audiCnt);
+      if (isFinite(value) && value > 0 && top > 0) {
+        var fill = element("span", null);
+        fill.style.width = (value / top) * 100 + "%";
+        bar.appendChild(fill);
+      }
+      cell.appendChild(bar);
+
+      var count = row.insertCell();
+      count.className = "count";
+      count.textContent = number(movie.audiCnt);
+    });
+
+    chart.textContent = "";
+    chart.appendChild(table);
+  }
+
+  note("박스오피스 순위를 불러오는 중...", false);
+
+  fetch(API_BASE + PATH)
+    .then(function (response) {
+      return response.text().then(function (body) {
+        return { ok: response.ok, status: response.status, body: body };
+      });
+    })
+    .then(function (result) {
+      if (!result.ok) {
+        note(messageFrom(result.body, result.status), true);
+        return;
+      }
+
+      var data = {};
+      try {
+        data = JSON.parse(result.body);
+      } catch (e) {
+        data = {};
+      }
+
+      var list = Array.isArray(data.boxOfficeList) ? data.boxOfficeList : [];
+      if (!list.length) {
+        note("오늘 박스오피스 순위가 아직 없습니다.", false);
+        return;
+      }
+
+      drawChart(list);
+      drawHighlight(
+        list.filter(function (movie) {
+          return movie.isReopen;
+        })
+      );
+    })
+    .catch(function () {
+      note("박스오피스 순위를 불러오지 못했습니다. 서버에 연결할 수 없습니다.", true);
+    });
+}
+
 // 로그인 후 화면을 API에 연결한다.
-// home.html이 greeting/profile/message/logout 요소를 선언하고 이 함수를 호출한다.
+// home.html이 reopen/greeting/profile/message/chart/logout 요소를 선언하고
+// 이 함수를 호출한다.
 function setupHome() {
   var greeting = document.getElementById("greeting");
   var profile = document.getElementById("profile");
   var message = document.getElementById("message");
   var logout = document.getElementById("logout");
+  var chart = document.getElementById("chart");
+  var reopen = document.getElementById("reopen");
 
   function show(text, isError) {
     message.textContent = text;
@@ -581,6 +749,10 @@ function setupHome() {
     ? email + " 님으로 로그인되었습니다."
     : "로그인되었습니다.";
   profile.textContent = "불러오는 중...";
+
+  // 순위는 이 사람이 누구인지와 상관없는 자료라 /users/me 를 기다리지 않는다.
+  // 두 요청은 나란히 가고, 한쪽이 늦거나 실패해도 다른 쪽은 그대로 그려진다.
+  loadBoxOffice(chart, reopen);
 
   authorizedFetch("/users/me")
     .then(read)

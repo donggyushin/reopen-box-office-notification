@@ -86,8 +86,8 @@ on a 401, since the server is the authority on expiry, not the local clock. It i
 only way to call an authenticated endpoint; `setupHome()` is its one caller today.
 
 `setupHome()` follows the same DOM contract as `setupCredentialForm()`: `home.html`
-declares `greeting`, `profile`, `message`, and `logout`, and the page's whole script is
-one `setupHome()` call. The profile table is built in JS, not markup, because one row
+declares `reopen`, `greeting`, `profile`, `message`, `chart`, and `logout`, and the page's
+whole script is one `setupHome()` call. The profile table is built in JS, not markup, because one row
 carries a control: when `isEmailVerified` is false the "이메일 인증" cell also gets a
 resend button that POSTs to `/users/email/verification`.
 
@@ -134,6 +134,30 @@ that just happened. The floor is enforced by
 the failure path skip the wait. Failure leaves the cell reading "받지 않음" with the
 reason in `#message` and offers no retry control: the next attempt is a reload, and this
 row is not a place to press things.
+
+**`loadBoxOffice()` is the only call on this page that carries no token.**
+`GET /box-office/daily` is public, so it uses bare `fetch` rather than `authorizedFetch()`
+— and the reason is not only that a bearer header would be pointless. `authorizedFetch()`
+can end a session: a 401 there clears tokens and `setupHome()` redirects. Failing to draw a
+ranking must never log anyone out, so this path never touches `localStorage` and never
+redirects. Its failure text goes in `#chart`; `#message` belongs to the profile rows above
+and would otherwise show two unrelated sentences at once. It is fired alongside
+`/users/me`, not after it, so neither half of the page waits on the other.
+
+**The bars are linear, and every one of them has its number printed beside it.** #1 outdraws
+#10 by more than a hundred times, so ranks 8-10 are a 2px mark — `.chart .bar span` has a
+`min-width` so a row with real audience never renders as nothing. That is the honest shape
+of the day and the point of the chart; the digits in the `.count` column are what make the
+bottom rows readable. Do not switch to a log scale to even them out — it would flatter the
+small rows by lying about the gap.
+
+**The reopening film is written twice on purpose.** It is highlighted in the table
+(`tr.reopen` — green name, green bar, and a `재개봉` tag, because the color alone carries no
+meaning for anyone who cannot see it) and written again in `#reopen` above everything else.
+One row out of ten is exactly the thing this whole service exists to announce, and in the
+table it has to be found. When the list holds no reopening film, `#reopen` says so in
+words. It is left empty — and `#reopen:empty` hides it — only when no list arrived at all,
+because "there are none today" and "we could not ask" must not look alike.
 
 **`verification.html` is served from a path it does not live at.** The mail link is
 `/email/verification/<code>`; `vercel.json` rewrites that to `/verification.html`, and
@@ -248,6 +272,7 @@ branch, and a local backend must allow CORS from `http://localhost:8000`.
 | 재설정 코드 인증 | `POST /users/verify/password` `{ email, code }` | `201` `{ success: true }` |
 | 비밀번호 변경 | `PATCH /users/password` `{ email, password }` | `200` |
 | 재개봉 알림 설정 | `PATCH /users/receive-reopen-box-office-notifications` (Bearer) `{ value }` | `200` |
+| 일별 박스오피스 | `GET /box-office/daily` (토큰 없음) | `200` `{ boxOfficeList: [{ rank, movieNm, openDt, audiCnt, salesShare, isReopen, ... }] }` |
 
 Errors come back as `{ message, error, statusCode }` where **`message` is either a string
 or an array** of validation strings. `messageFrom()` in `auth.js` handles both; anything
