@@ -350,6 +350,27 @@ function verificationEmailButton(show, onDead, successText) {
   return button;
 }
 
+// 켜진 상태를 나타내는 체크 표시. 표의 값 칸에서 "완료", "받는 중" 같은 말을
+// 대신한다 — 줄 이름이 이미 무엇에 대한 답인지 말하고 있어서 값 칸에는 예/아니오만
+// 있으면 되고, 글자보다 표시가 한눈에 들어온다. 그림만 남으므로 읽어 주는 도구에는
+// 원래의 말이 들리도록 label 을 붙인다.
+//
+// animated 는 방금 그렇게 된 자리에서만 준다. 새로고침으로 이미 켜져 있던 값이
+// 선을 그리며 나타나면, 지금 막 일어난 일처럼 보여서 거짓말이 된다.
+function checkMark(label, animated) {
+  var ns = "http://www.w3.org/2000/svg";
+  var svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("class", animated ? "check drawn" : "check");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", label);
+
+  var path = document.createElementNS(ns, "path");
+  path.setAttribute("d", "M3.5 8.5 L6.8 11.8 L12.5 4.8");
+  svg.appendChild(path);
+  return svg;
+}
+
 // 재개봉 알림을 켠다. 홈이 표를 그리다가 "이메일 인증은 끝났는데 알림은 꺼져
 // 있는" 사람을 만나면 바로 부른다 — 물어보지 않는다. 알림을 받으러 가입한
 // 사람에게 "받으시겠습니까"는 한 번 더 누르게 만드는 절차일 뿐이다.
@@ -373,24 +394,11 @@ function enableReopenNotifications(cell, show, onDead) {
     return node;
   }
 
-  // 체크 표시는 선을 그리며 나타난다. 이 화면에서 유일하게 움직이는 자리다.
-  function checkMark() {
-    var ns = "http://www.w3.org/2000/svg";
-    var svg = document.createElementNS(ns, "svg");
-    svg.setAttribute("class", "check");
-    svg.setAttribute("viewBox", "0 0 16 16");
-    svg.setAttribute("aria-hidden", "true");
-
-    var path = document.createElementNS(ns, "path");
-    path.setAttribute("d", "M3.5 8.5 L6.8 11.8 L12.5 4.8");
-    svg.appendChild(path);
-    return svg;
-  }
-
+  // 여기서만 체크 표시가 선을 그리며 나타난다. 이 화면에서 유일하게 움직이는
+  // 자리이고, 새로고침으로 그려지는 같은 표시와 다른 점도 그것뿐이다.
   function showDone() {
     cell.textContent = "";
-    cell.appendChild(checkMark());
-    cell.appendChild(element("span", "settled", "받는 중"));
+    cell.appendChild(checkMark("받는 중", true));
   }
 
   // 켜지 못했으면 표는 사실대로 꺼진 상태를 보여준다.
@@ -526,12 +534,16 @@ function setupHome() {
     // 표에는 이 사람이 손댈 수 있는 상태만 남긴다. 이메일은 위 인사말에 이미
     // 있고, 회원 번호나 가입일은 보고 나서 할 일이 없는 값이라 뺐다.
     var table = document.createElement("table");
+    // 끝난 상태는 체크 표시로, 아직인 상태는 글자로 둔다. 아직인 쪽에는 할 일이
+    // 남아 있어서 — 이 줄에는 버튼까지 붙는다 — 말로 적어 주는 편이 맞다.
     var verifyCell = addRow(
       table,
       "이메일 인증",
-      me.isEmailVerified ? "완료" : "미완료"
+      me.isEmailVerified ? "" : "미완료"
     );
-    if (!me.isEmailVerified) {
+    if (me.isEmailVerified) {
+      verifyCell.appendChild(checkMark("완료", false));
+    } else {
       // 인증은 메일의 링크에서 끝나므로 이 화면은 결과를 알 수 없다.
       // 다시 열어야 상태가 갱신된다는 것까지 알려 준다.
       verifyCell.appendChild(
@@ -546,11 +558,14 @@ function setupHome() {
     var notifyCell = addRow(
       table,
       "재개봉 알림",
-      me.receiveReopenBoxOfficeNotifications ? "받는 중" : "받지 않음"
+      me.receiveReopenBoxOfficeNotifications ? "" : "받지 않음"
     );
-    // 인증을 마쳤는데 알림이 꺼져 있으면 그 자리에서 켠다. 인증 전이라면
-    // 켜 봐야 보낼 곳이 없으니, 그 사람의 다음 할 일은 위 줄에 있다.
-    if (me.isEmailVerified && !me.receiveReopenBoxOfficeNotifications) {
+    if (me.receiveReopenBoxOfficeNotifications) {
+      // 이미 켜져 있던 값이다. 같은 표시를 그리되 움직이지는 않는다.
+      notifyCell.appendChild(checkMark("받는 중", false));
+    } else if (me.isEmailVerified) {
+      // 인증을 마쳤는데 알림이 꺼져 있으면 그 자리에서 켠다. 인증 전이라면
+      // 켜 봐야 보낼 곳이 없으니, 그 사람의 다음 할 일은 위 줄에 있다.
       enableReopenNotifications(notifyCell, show, toLogin);
     }
 

@@ -43,8 +43,8 @@ TypeScript, or a package manager unless asked. `auth.js` is loaded with a plain
 **Keep the design austere.** The target look is early-Google: Arial, black text, gray
 1px borders, no shadows/gradients/animation/icons. `style.css` is element-selector-based
 with a handful of classes. Resist adding visual polish. The one sanctioned exception is
-the block at the bottom of `style.css` — `.progress`, `.pending`, `.check`, `.settled` —
-which exists only for the 재개봉 알림 row. It is a deliberate accent, not the start of a
+the block at the bottom of `style.css` — `.check`, `.check.drawn`, `.progress`, `.pending` —
+which exists only for the two profile rows. It is a deliberate accent, not the start of a
 theme: an animation added anywhere else has no such warrant.
 
 ## Architecture
@@ -107,6 +107,18 @@ that survived the retry clears tokens and redirects, a non-ok response shows the
 message and stays put, and a rejected `fetch` shows a connection error without touching
 the session.
 
+**A settled row is a check mark, not a word.** Both rows write their true state as the
+drawn `checkMark()` and their false state as text — `미완료`, `받지 않음`. The asymmetry is
+the point: the row label already asks the question, so a yes needs only a mark, while a no
+still has work attached to it and one of those cells carries the resend button. The mark
+replaces the word rather than joining it, so `aria-label` carries what was dropped.
+
+`checkMark(label, animated)` is shared by `setupHome()` and `enableReopenNotifications()`,
+and `animated` is the only difference between them. The draw animation lives on
+`.check.drawn`, never on `.check`, because a value that was already true when the page
+loaded must not animate — a check that draws itself says "this just happened", and on a
+reload that is a lie. Only the row that genuinely just flipped gets it.
+
 **`enableReopenNotifications()` asks nobody, and stalls on purpose.** Someone who signed
 up for reopening alerts has already answered the question a confirm button would ask, so
 the page does not ask it again — it PATCHes
@@ -114,7 +126,7 @@ the page does not ask it again — it PATCHes
 row is drawn. Because nothing was clicked, the change has to be visible on its own: the
 function takes over the value cell with a sweeping progress bar for a floor of 2500ms —
 `MIN_PENDING_MS` — even when the server answers instantly, then settles into a drawn
-checkmark, "받는 중", and a line in `#message`. Do not shorten the floor to match the
+checkmark and a line in `#message`. Do not shorten the floor to match the
 server; a value that flips the instant the page loads reads as markup, not as something
 that just happened. The floor is enforced by
 `Promise.all([settled, wait(MIN_PENDING_MS)])`, where `settled` resolves to `{result}` or
