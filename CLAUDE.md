@@ -113,6 +113,10 @@ splits on whether tokens exist: a signed-in visitor gets the same
 first. A rejected `fetch` is the exception — the code may still be alive, so that path
 suggests reopening the link rather than burning it.
 
+`verificationEmailButton()` stays disabled after a send goes through, and re-enables
+only when the send failed. One mail is the whole point; a second changes nothing, and
+the next step is in the inbox, not on the page.
+
 This page also breaks the "show the server's message" rule on purpose. The backend
 answers an expired code with a bare `Unauthorized`, which tells a Korean user nothing, so
 `#message` carries our own sentence and `#detail` keeps the server's text in small gray

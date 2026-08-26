@@ -293,12 +293,15 @@ function verificationEmailButton(show, onDead, successText) {
           return;
         }
 
-        button.disabled = false;
-
         if (!result.ok) {
+          // 보내지 못했으니 다시 누를 수 있어야 한다.
+          button.disabled = false;
           show(messageFrom(result.body, result.status), true);
           return;
         }
+
+        // 보낸 뒤에는 잠근 채로 둔다. 같은 메일을 연달아 보내 봐야 할 일이
+        // 늘지 않고, 다음 차례는 이 화면이 아니라 메일함에 있다.
         show(successText, false);
       })
       .catch(function () {
