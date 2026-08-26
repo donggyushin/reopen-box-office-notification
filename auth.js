@@ -1,5 +1,10 @@
-// 백엔드 API 주소
-var API_BASE = "https://donggyu-sworld-production.up.railway.app";
+// 백엔드 API 주소.
+// 로컬에서 연 페이지는 같은 기계에서 띄운 백엔드를 본다. 그 밖에는 배포된 쪽이다.
+var LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
+var API_BASE =
+  LOCAL_HOSTS.indexOf(location.hostname) === -1
+    ? "https://donggyu-sworld-production.up.railway.app"
+    : "http://localhost:3000";
 
 // 만료 몇 초 전부터 미리 재발급할지. 요청이 날아가는 사이에 만료되는 것을 막는다.
 var TOKEN_EXPIRY_SKEW_MS = 30 * 1000;

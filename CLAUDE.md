@@ -104,7 +104,11 @@ so test it as `verification.html?code=<code>` — the query form is the fallback
 
 ## Backend
 
-`API_BASE` at the top of `auth.js` is the only place the backend URL appears.
+`API_BASE` at the top of `auth.js` is the only place a backend URL appears. It picks by
+hostname: a page served from `localhost`/`127.0.0.1`/`[::1]` talks to
+`http://localhost:3000`, everything else to the Railway deployment. So local pages hit a
+local backend by default — pointing local at the deployed backend means editing that
+branch, and a local backend must allow CORS from `http://localhost:8000`.
 
 | | 요청 | 성공 |
 |---|---|---|

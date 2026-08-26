@@ -47,11 +47,16 @@ GitHub 레포를 Vercel에 연결하면 push할 때마다 자동 배포됩니다
 
 ## 백엔드 연결
 
-`auth.js` 맨 위 한 줄이 전부입니다.
+`auth.js` 맨 위에서 한 번만 정합니다. 로컬에서 연 페이지(`localhost`, `127.0.0.1`)는
+같은 기계에서 띄운 백엔드를 보고, 그 밖에는 배포된 쪽을 봅니다.
 
 ```js
-var API_BASE = "https://donggyu-sworld-production.up.railway.app";
+var API_BASE = 로컬이면 "http://localhost:3000"
+             : 아니면 "https://donggyu-sworld-production.up.railway.app";
 ```
+
+로컬 백엔드로 붙으려면 그쪽 CORS가 `http://localhost:8000`을 허용해야 합니다.
+로컬에서도 배포 백엔드를 보고 싶으면 저 분기를 잠깐 지우고 쓰세요.
 
 | | 요청 | 성공 |
 |---|---|---|
