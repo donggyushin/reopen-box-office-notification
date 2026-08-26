@@ -3,18 +3,25 @@
 회원가입 / 로그인 페이지. 빌드 도구 없이 HTML/CSS/JS 파일만으로 동작합니다.
 
 ```
-index.html          회원가입
-login.html          로그인
+login.html          로그인 (첫 화면, `/`)
+signup.html         회원가입
 home.html           로그인 후 화면
 verification.html   이메일 인증 (메일 링크로 진입)
 password.html       비밀번호 재설정 (코드 요청 → 인증 → 변경)
 auth.js             API 호출, 토큰 저장, 폼 처리 (전 페이지 공용)
 style.css           스타일
-vercel.json         /email/verification/:code → /verification.html rewrite
+vercel.json         / → /login.html, /email/verification/:code → /verification.html rewrite
 serve.py            로컬 확인용 정적 서버 (캐시 없음)
 ```
 
+첫 화면은 로그인입니다. `index.html`은 없고 `/`는 `vercel.json`의 rewrite로
+`login.html`을 내보냅니다. 회원가입은 그 아래 "계정 만들기" 링크로 들어갑니다.
+
 가입이나 로그인에 성공하면 토큰을 `localStorage`에 저장하고 `home.html`로 이동합니다.
+이미 토큰을 들고 있는 사람이 로그인이나 회원가입 화면을 열면 폼을 그리지 않고 바로
+홈으로 보냅니다 — 홈이 토큰이 없을 때 로그인으로 되돌리는 것과 같은 기준(`hasSession()`)을
+반대 방향으로 씁니다.
+
 `home.html`은 `GET /users/me`로 내 상태를 불러와 이메일 인증과 재개봉 알림 두 줄만
 보여주고, 토큰이 없거나 재발급까지 실패하면 `login.html`로 되돌립니다. 끝난 상태는 체크
 표시로, 아직인 상태는 글자로 적습니다 — 줄 이름이 이미 질문이라 "예"는 표시 하나면 되고,
@@ -39,7 +46,7 @@ http://localhost:8000/email/verification/482913 — `serve.py`가 `vercel.json`�
 
 ## 배포 (Vercel)
 
-정적 사이트라 빌드 설정은 필요 없고, `vercel.json`에 rewrite 한 줄만 있습니다.
+정적 사이트라 빌드 설정은 필요 없고, `vercel.json`에 rewrite 두 줄만 있습니다.
 
 ```
 npm i -g vercel

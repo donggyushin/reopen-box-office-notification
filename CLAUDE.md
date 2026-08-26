@@ -52,15 +52,15 @@ theme: an animation added anywhere else has no such warrant.
 Five pages plus one shared script:
 
 ```
-index.html          회원가입   ─┐
-login.html          로그인     ─┴─→ auth.js → home.html
+login.html          로그인      ─┐   ← /  (vercel.json rewrite)
+signup.html         회원가입    ─┴─→ auth.js → home.html
 home.html           로그인 후 화면
 verification.html   이메일 인증 (메일 링크로 진입)
 password.html       비밀번호 재설정 (login.html 에서 진입)
 ```
 
 `auth.js` is the whole application layer. The non-obvious part is
-**`setupCredentialForm()` is a DOM contract, not a component.** `index.html` and
+**`setupCredentialForm()` is a DOM contract, not a component.** `signup.html` and
 `login.html` are near-identical documents that each declare the same fixed element IDs —
 `auth-form`, `email`, `password`, `submit`, `message` — and then call
 `setupCredentialForm()` with only what differs (endpoint path, minimum password length,
@@ -71,6 +71,23 @@ Both endpoints return the same success shape, so signup and login converge on on
 store tokens, go to `home.html`. `home.html` is the guard — it redirects to `login.html`
 when `localStorage` holds neither token, and again if `ensureAccessToken()` cannot
 produce a live one.
+
+**There is no `index.html`; `/` is a rewrite to `/login.html`.** The first screen is the
+one an unknown visitor needs, and the signup page is a link away from it rather than the
+other way round. Putting login at `index.html` instead would have meant renaming the file
+that `auth.js`, `password.html`, and every `?next=` link already point at, so the root is
+a rewrite and every page keeps its own name. Adding a real `index.html` back would shadow
+that rewrite and quietly undo this.
+
+**The two guards are one function, pointed in opposite directions.** `hasSession()` — a
+token, either one — is what `setupHome()` checks before staying and what
+`setupCredentialForm()` checks before leaving: a signed-in visitor who opens `/` (or the
+signup page) is sent straight to `home.html`, honouring `?next=` the same way a fresh
+login does. They must keep sharing that one function, because a guard pair that disagrees
+about what "signed in" means is a redirect loop. A dead token is not a loop, only one
+extra hop: home fails to refresh, clears the tokens, and sends them back — and this time
+the form stays. `setupEmailVerification()` asks the same question three times over, so it
+now reads the global instead of the private copy it used to keep.
 
 `readPayload()` base64-decodes the JWT payload; `readEmail()` and `isExpired()` are the
 only readers. Signature verification is the server's job; never treat the decoded

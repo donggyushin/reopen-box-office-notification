@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/", "destination": "/login.html" },
     { "source": "/email/verification/:code", "destination": "/verification.html" }
   ]
 }

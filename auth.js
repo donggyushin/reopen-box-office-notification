@@ -46,6 +46,15 @@ function clearTokens() {
   localStorage.removeItem("refreshToken");
 }
 
+// 로그인한 사람인지. accessToken 이 만료됐어도 refreshToken 으로 되살릴 수 있으므로
+// 둘 중 하나라도 있으면 세션이 있는 것으로 본다. 홈이 로그인으로 되돌리는 기준과
+// 로그인/회원가입이 홈으로 보내는 기준이 같은 함수라야 두 화면이 서로를 튕기지 않는다.
+function hasSession() {
+  return !!(
+    localStorage.getItem("accessToken") || localStorage.getItem("refreshToken")
+  );
+}
+
 // JWT 페이로드를 꺼낸다.
 // 서명 검증은 서버 몫이고, 여기서는 표시와 만료 판정에만 쓴다.
 function readPayload(jwt) {
@@ -222,6 +231,14 @@ function readNextPath() {
 // 이메일/비밀번호 폼을 API에 연결한다.
 // 회원가입과 로그인이 같은 폼 구조를 쓰므로 두 페이지가 이 함수를 공유한다.
 function setupCredentialForm(options) {
+  // 이미 로그인한 사람에게 이 폼은 물어볼 것이 없다. 홈이 토큰이 하나도 없을 때
+  // 로그인으로 되돌리는 것과 정확히 반대 방향이고, 기준이 같아서 둘이 맞물리지 않는다.
+  // 죽은 토큰이면 홈이 재발급에 실패해 토큰을 지우고 되돌려 보내므로 한 번만 더 돈다.
+  if (hasSession()) {
+    location.replace(readNextPath() || "home.html");
+    return;
+  }
+
   var form = document.getElementById("auth-form");
   var emailInput = document.getElementById("email");
   var passwordInput = document.getElementById("password");
@@ -678,7 +695,7 @@ function setupHome() {
   logout.addEventListener("click", toLogin);
 
   // 토큰이 아예 없으면 물어볼 것도 없이 로그인 페이지로 보낸다.
-  if (!localStorage.getItem("accessToken") && !localStorage.getItem("refreshToken")) {
+  if (!hasSession()) {
     location.replace("login.html");
     return;
   }
@@ -858,12 +875,6 @@ function setupEmailVerification() {
     return response.text().then(function (body) {
       return { ok: response.ok, status: response.status, body: body };
     });
-  }
-
-  function hasSession() {
-    return !!(
-      localStorage.getItem("accessToken") || localStorage.getItem("refreshToken")
-    );
   }
 
   // 인증에 실패했으면 이 코드는 다시 쓸 수 없다. 로그인 링크만 남기는 대신
