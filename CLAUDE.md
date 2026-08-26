@@ -83,7 +83,11 @@ only way to call an authenticated endpoint; `setupHome()` is its one caller toda
 
 `setupHome()` follows the same DOM contract as `setupCredentialForm()`: `home.html`
 declares `greeting`, `profile`, `message`, and `logout`, and the page's whole script is
-one `setupHome()` call. It paints the JWT email immediately so the page is never blank,
+one `setupHome()` call. The profile table is built in JS, not markup, because one row
+carries a control: when `isEmailVerified` is false the "이메일 인증" cell also gets a
+resend button that POSTs to `/users/email/verification`. Verification finishes in the
+mail link, not on this page, so the success message tells the user to reload — the page
+has no way to observe the result on its own. It paints the JWT email immediately so the page is never blank,
 then overwrites it with the `/users/me` response — the token is display-only scaffolding,
 the API answer is the truth. Its three failure paths are deliberately different: a 401
 that survived the retry clears tokens and redirects, a non-ok response shows the server's
@@ -109,6 +113,7 @@ so test it as `verification.html?code=<code>` — the query form is the fallback
 | 이메일 인증 | `POST /users/verify/email` `{ code }` | `{ success: true }` |
 | 토큰 재발급 | `POST /auth/refresh-token` `{ refreshToken }` | `201` `{ accessToken, refreshToken }` |
 | 내 정보 | `GET /users/me` (Bearer) | `200` `{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications }` |
+| 인증 메일 재발송 | `POST /users/email/verification` (Bearer, 바디 없음) | `201` |
 
 Errors come back as `{ message, error, statusCode }` where **`message` is either a string
 or an array** of validation strings. `messageFrom()` in `auth.js` handles both; anything

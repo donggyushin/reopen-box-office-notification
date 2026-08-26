@@ -60,6 +60,7 @@ var API_BASE = "https://donggyu-sworld-production.up.railway.app";
 | 이메일 인증 | `POST /users/verify/email` `{ code }` | `{ success: true }` |
 | 토큰 재발급 | `POST /auth/refresh-token` `{ refreshToken }` | `201` `{ accessToken, refreshToken }` |
 | 내 정보 | `GET /users/me` (Bearer) | `200` `{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications }` |
+| 인증 메일 재발송 | `POST /users/email/verification` (Bearer, 바디 없음) | `201` |
 
 실패 응답은 `{ message, error, statusCode }` 형태이고, `message`는 문자열이거나
 검증 오류 배열(`["email must be an email", ...]`)입니다. 둘 다 화면에 그대로 표시합니다.
@@ -68,6 +69,9 @@ var API_BASE = "https://donggyu-sworld-production.up.railway.app";
 
 가입하면 메일로 `/email/verification/<코드>` 링크가 갑니다. 이 주소로 들어오면
 `verification.html`이 열리면서 경로 끝의 코드를 그대로 인증 API에 보냅니다.
+
+메일을 놓쳤다면 홈 화면에서 다시 받을 수 있습니다. `isEmailVerified`가 `false`인 사람에게만
+"이메일 인증" 줄에 재발송 버튼이 붙습니다.
 
 ## 알아둘 점
 

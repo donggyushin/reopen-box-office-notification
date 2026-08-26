@@ -298,6 +298,28 @@ function setupHome() {
     location.replace("login.html");
   }
 
+  // 본문까지 읽어야 실패 문구를 꺼낼 수 있으므로 한 덩어리로 눕힌다.
+  function read(response) {
+    return response.text().then(function (body) {
+      return { ok: response.ok, status: response.status, body: body };
+    });
+  }
+
+  // 재발급까지 하고도 거절당하면 세션이 끝난 것이고, fetch 자체가 거절되면
+  // 토큰이 이미 지워졌는지로 재발급 실패와 연결 실패를 가른다.
+  function handleFailure(retry) {
+    return function () {
+      if (!localStorage.getItem("accessToken")) {
+        location.replace("login.html");
+        return;
+      }
+      show("서버에 연결할 수 없습니다.", true);
+      if (retry) {
+        retry.disabled = false;
+      }
+    };
+  }
+
   logout.addEventListener("click", toLogin);
 
   // 토큰이 아예 없으면 물어볼 것도 없이 로그인 페이지로 보낸다.
@@ -306,13 +328,55 @@ function setupHome() {
     return;
   }
 
-  // 표를 한 줄씩 채운다. 값이 없는 칸은 빈 칸으로 둔다.
+  // 표를 한 줄씩 채우고 값 칸을 돌려준다. 값이 없는 칸은 빈 칸으로 둔다.
   function addRow(table, label, value) {
     var row = table.insertRow();
     var head = document.createElement("th");
     head.textContent = label;
     row.appendChild(head);
-    row.insertCell().textContent = value == null ? "" : String(value);
+    var cell = row.insertCell();
+    cell.textContent = value == null ? "" : String(value);
+    return cell;
+  }
+
+  // 아직 인증 전인 사람에게만 붙는 버튼.
+  // 누르면 서버가 그 사람 메일로 인증 링크를 다시 보낸다.
+  function verifyButton(email) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "인증 메일 보내기";
+
+    button.addEventListener("click", function () {
+      button.disabled = true;
+      show("인증 메일을 보내는 중...", false);
+
+      authorizedFetch("/users/email/verification", { method: "POST" })
+        .then(read)
+        .then(function (result) {
+          if (result.status === 401) {
+            toLogin();
+            return;
+          }
+
+          button.disabled = false;
+
+          if (!result.ok) {
+            show(messageFrom(result.body, result.status), true);
+            return;
+          }
+
+          // 인증은 메일의 링크에서 끝나므로 이 화면은 결과를 알 수 없다.
+          // 다시 열어야 상태가 갱신된다는 것까지 알려 준다.
+          show(
+            (email ? email + " 로 " : "") +
+              "인증 메일을 보냈습니다. 메일의 링크를 누른 뒤 이 화면을 새로고침해 주세요.",
+            false
+          );
+        })
+        .catch(handleFailure(button));
+    });
+
+    return button;
   }
 
   function showProfile(me) {
@@ -325,7 +389,14 @@ function setupHome() {
     addRow(table, "이메일", me.email);
     addRow(table, "이름", me.name || "등록하지 않음");
     addRow(table, "가입일", formatDate(me.createdAt));
-    addRow(table, "이메일 인증", me.isEmailVerified ? "완료" : "미완료");
+    var verifyCell = addRow(
+      table,
+      "이메일 인증",
+      me.isEmailVerified ? "완료" : "미완료"
+    );
+    if (!me.isEmailVerified) {
+      verifyCell.appendChild(verifyButton(me.email));
+    }
     addRow(
       table,
       "재개봉 알림",
@@ -351,11 +422,7 @@ function setupHome() {
   profile.textContent = "불러오는 중...";
 
   authorizedFetch("/users/me")
-    .then(function (response) {
-      return response.text().then(function (body) {
-        return { ok: response.ok, status: response.status, body: body };
-      });
-    })
+    .then(read)
     .then(function (result) {
       if (result.status === 401) {
         // 재발급까지 하고도 거절당했다면 세션이 끝난 것이다.
@@ -377,14 +444,9 @@ function setupHome() {
       }
       showProfile(me);
     })
-    .catch(function () {
-      // 재발급이 거절되면 토큰이 이미 지워져 있다. 그때는 로그인부터 다시 한다.
-      if (!localStorage.getItem("accessToken")) {
-        location.replace("login.html");
-        return;
-      }
+    .catch(function (error) {
       profile.textContent = "";
-      show("서버에 연결할 수 없습니다.", true);
+      handleFailure(null)(error);
     });
 }
 
