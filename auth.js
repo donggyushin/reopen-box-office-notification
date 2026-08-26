@@ -188,6 +188,26 @@ function authorizedFetch(path, options) {
   });
 }
 
+// 로그인 뒤 돌아갈 주소를 URL에서 꺼낸다.
+// 다른 사이트로 튕겨 보내는 열린 리다이렉트가 되지 않게 같은 사이트의 경로만 받는다.
+// "//evil.com" 과 "/\\evil.com" 은 브라우저가 다른 호스트로 읽으므로 함께 막는다.
+function readNextPath() {
+  var matched = location.search.match(/[?&]next=([^&]*)/);
+  if (!matched) {
+    return "";
+  }
+
+  var next = decodeURIComponent(matched[1]);
+  if (
+    next.charAt(0) !== "/" ||
+    next.charAt(1) === "/" ||
+    next.charAt(1) === "\\"
+  ) {
+    return "";
+  }
+  return next;
+}
+
 // 이메일/비밀번호 폼을 API에 연결한다.
 // 회원가입과 로그인이 같은 폼 구조를 쓰므로 두 페이지가 이 함수를 공유한다.
 function setupCredentialForm(options) {
@@ -254,7 +274,8 @@ function setupCredentialForm(options) {
         }
 
         if (saveTokens(data)) {
-          location.href = "home.html";
+          // 인증 링크처럼 로그인이 막아선 자리가 있으면 그리로 돌려보낸다.
+          location.href = readNextPath() || "home.html";
           return;
         }
 
@@ -493,10 +514,13 @@ function setupEmailVerification() {
     detail.textContent = "서버 응답: " + messageFrom(result.body, result.status);
   }
 
+  // 로그인하고 나면 이 주소로 돌아와 인증을 이어서 한다.
   function addLoginLink() {
     var paragraph = document.createElement("p");
     var link = document.createElement("a");
-    link.href = "/login.html";
+    link.href =
+      "/login.html?next=" +
+      encodeURIComponent(location.pathname + location.search);
     link.textContent = "로그인";
     paragraph.appendChild(link);
     actions.appendChild(paragraph);
@@ -508,16 +532,25 @@ function setupEmailVerification() {
     actions.appendChild(paragraph);
   }
 
+  function read(response) {
+    return response.text().then(function (body) {
+      return { ok: response.ok, status: response.status, body: body };
+    });
+  }
+
+  function hasSession() {
+    return !!(
+      localStorage.getItem("accessToken") || localStorage.getItem("refreshToken")
+    );
+  }
+
   // 인증에 실패했으면 이 코드는 다시 쓸 수 없다. 로그인 링크만 남기는 대신
   // 새 메일을 받을 길을 준다. 재발송에는 토큰이 필요하므로 로그인한 사람에게만
   // 버튼이고, 아닌 사람은 로그인부터 해야 한다.
   function offerAnotherEmail() {
     actions.textContent = "";
 
-    if (
-      !localStorage.getItem("accessToken") &&
-      !localStorage.getItem("refreshToken")
-    ) {
+    if (!hasSession()) {
       addLine("로그인하면 인증 메일을 다시 받을 수 있습니다.");
       addLoginLink();
       return;
@@ -551,18 +584,23 @@ function setupEmailVerification() {
     return;
   }
 
+  // 이 API 는 가드가 걸려 있어 로그인한 사람만 부를 수 있다. 토큰이 없으면
+  // 보내 봐야 코드에 닿기도 전에 막히므로, 요청 대신 로그인부터 하게 한다.
+  if (!hasSession()) {
+    show("이 링크로 인증하려면 먼저 로그인해야 합니다.", true);
+    addLine("로그인하면 이 화면으로 돌아와 인증을 이어서 합니다.");
+    addLoginLink();
+    return;
+  }
+
   show("인증 중...", false);
 
-  fetch(API_BASE + "/users/verify/email", {
+  authorizedFetch("/users/verify/email", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code: code })
   })
-    .then(function (response) {
-      return response.text().then(function (body) {
-        return { ok: response.ok, status: response.status, body: body };
-      });
-    })
+    .then(read)
     .then(function (result) {
       var data = {};
       try {
@@ -586,6 +624,13 @@ function setupEmailVerification() {
       offerAnotherEmail();
     })
     .catch(function () {
+      // 재발급이 거절되면 토큰이 이미 지워져 있다. 연결 실패와 그걸 가른다.
+      if (!localStorage.getItem("accessToken")) {
+        show("세션이 만료되었습니다. 다시 로그인한 뒤 링크를 열어 주세요.", true);
+        addLoginLink();
+        return;
+      }
+
       // 코드가 아직 살아 있을 수도 있으므로 재발송을 권하지 않는다.
       show("서버에 연결할 수 없습니다. 잠시 뒤 링크를 다시 열어 주세요.", true);
     });

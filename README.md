@@ -64,7 +64,7 @@ var API_BASE = 로컬이면 "http://localhost:3000"
 |---|---|---|
 | 회원가입 | `POST /users` `{ email, password }` | `201` `{ accessToken, refreshToken }` |
 | 로그인 | `POST /users/login` `{ email, password }` | `201` `{ accessToken, refreshToken }` |
-| 이메일 인증 | `POST /users/verify/email` `{ code }` | `{ success: true }` |
+| 이메일 인증 | `POST /users/verify/email` (Bearer) `{ code }` | `201` `{ success: true }` |
 | 토큰 재발급 | `POST /auth/refresh-token` `{ refreshToken }` | `201` `{ accessToken, refreshToken }` |
 | 내 정보 | `GET /users/me` (Bearer) | `200` `{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications }` |
 | 인증 메일 재발송 | `POST /users/email/verification` (Bearer, 바디 없음) | `201` |
@@ -80,8 +80,12 @@ var API_BASE = 로컬이면 "http://localhost:3000"
 메일을 놓쳤다면 홈 화면에서 다시 받을 수 있습니다. `isEmailVerified`가 `false`인 사람에게만
 "이메일 인증" 줄에 재발송 버튼이 붙습니다.
 
+**인증 API에는 Bearer 토큰이 필요합니다.** 로그인하지 않은 브라우저에서 메일 링크를 열면
+요청을 보내지 않고 로그인부터 안내하며, 로그인하면 그 주소로 돌아와 인증을 이어서 합니다
+(`login.html?next=<경로>`).
+
 링크가 만료됐거나 이미 쓴 코드라 인증에 실패하면, 그 화면에서 바로 인증 메일을 다시
-받을 수 있습니다. 로그인한 상태면 재발송 버튼이, 아니면 로그인 안내가 나옵니다.
+받을 수 있습니다.
 
 ## 알아둘 점
 

@@ -106,6 +106,20 @@ the session.
 reference `/auth.js` and `/style.css` with absolute paths — relative ones would resolve
 under `/email/verification/`.
 
+**`/users/verify/email` is guarded, so the mail link needs a session.** The backend
+answers a missing token with a bare `{"message":"Unauthorized","statusCode":401}` — no
+`error` key — while a business rejection carries `error` plus a Korean sentence. That
+difference is the only way to tell "you sent no token" from "that code is bad", and
+sending the code without a bearer header silently produces the former. So the page checks
+for tokens before it calls at all, and a signed-out visitor gets
+`login.html?next=<this path>`; `readNextPath()` accepts only a single-slash same-site
+path, so `//evil.com` cannot ride in through the query.
+
+One consequence to know: a wrong code also answers 401, so `authorizedFetch()` spends a
+refresh and one retry before reporting it. That is wasted work, not a bug — do not try to
+skip it by sniffing the `error` key, which would couple the page to the backend's error
+shape.
+
 A failed code is a dead end for that link, so the page does not just report it and offer
 a login link — it offers a new email. Resending needs a bearer token, so `verification.html`
 splits on whether tokens exist: a signed-in visitor gets the same
@@ -140,7 +154,7 @@ branch, and a local backend must allow CORS from `http://localhost:8000`.
 |---|---|---|
 | 회원가입 | `POST /users` `{ email, password }` | `201` `{ accessToken, refreshToken }` |
 | 로그인 | `POST /users/login` `{ email, password }` | `201` `{ accessToken, refreshToken }` |
-| 이메일 인증 | `POST /users/verify/email` `{ code }` | `{ success: true }` |
+| 이메일 인증 | `POST /users/verify/email` (Bearer) `{ code }` | `201` `{ success: true }` |
 | 토큰 재발급 | `POST /auth/refresh-token` `{ refreshToken }` | `201` `{ accessToken, refreshToken }` |
 | 내 정보 | `GET /users/me` (Bearer) | `200` `{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications }` |
 | 인증 메일 재발송 | `POST /users/email/verification` (Bearer, 바디 없음) | `201` |
