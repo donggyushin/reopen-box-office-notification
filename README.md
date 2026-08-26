@@ -10,6 +10,7 @@ verification.html   이메일 인증 (메일 링크로 진입)
 auth.js             API 호출, 토큰 저장, 폼 처리 (전 페이지 공용)
 style.css           스타일
 vercel.json         /email/verification/:code → /verification.html rewrite
+serve.py            로컬 확인용 정적 서버 (캐시 없음)
 ```
 
 가입이나 로그인에 성공하면 토큰을 `localStorage`에 저장하고 `home.html`로 이동합니다.
@@ -19,10 +20,14 @@ vercel.json         /email/verification/:code → /verification.html rewrite
 ## 로컬에서 보기
 
 ```
-python3 -m http.server 8000
+python3 serve.py        # 포트를 바꾸려면 python3 serve.py 3000
 ```
 
 후 http://localhost:8000 접속. (`file://`로 열면 API 호출이 CORS로 막힙니다.)
+
+`python3 -m http.server`를 쓰지 마세요. 그쪽은 `Cache-Control`을 보내지 않아서 브라우저가
+`auth.js`를 재검증 없이 계속 재사용합니다. 새 HTML과 옛 JS가 짝지어지면 함수가 없다는
+에러만 나고 화면은 조용히 비어서, 원인을 찾기 어렵습니다. `serve.py`는 그래서 캐시를 끕니다.
 
 이메일 인증 화면은 로컬에 rewrite가 없으므로
 http://localhost:8000/verification.html?code=482913 처럼 쿼리로 확인합니다.

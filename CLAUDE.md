@@ -13,13 +13,20 @@ separate repository and is deployed to Railway.
 There is nothing to build or install.
 
 ```
-python3 -m http.server 8000    # 로컬 확인 — http://localhost:8000
+python3 serve.py               # 로컬 확인 — http://localhost:8000
 vercel                          # 프리뷰 배포
 vercel --prod                   # 프로덕션 배포
 ```
 
 Open pages through the local server, not `file://` — the API calls are cross-origin and
 `file://` requests are rejected.
+
+**Use `serve.py`, not `python3 -m http.server`.** The stdlib server sends no
+`Cache-Control`, so Chrome reuses a cached `auth.js` without revalidating. A new
+`home.html` then runs against an old `auth.js`, the first call throws
+`ReferenceError`, and the page goes silently blank — the symptom points at the page,
+not at the cache, so it costs real time to diagnose. `serve.py` sends `no-store` and
+drops conditional requests so an already-cached copy cannot come back as a 304.
 
 There is no linter and no tests. To sanity-check a change, `node --check auth.js` catches
 syntax errors, and functions in `auth.js` can be exercised in `node` by extracting them
