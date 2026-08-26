@@ -29,8 +29,10 @@ python3 serve.py        # 포트를 바꾸려면 python3 serve.py 3000
 `auth.js`를 재검증 없이 계속 재사용합니다. 새 HTML과 옛 JS가 짝지어지면 함수가 없다는
 에러만 나고 화면은 조용히 비어서, 원인을 찾기 어렵습니다. `serve.py`는 그래서 캐시를 끕니다.
 
-이메일 인증 화면은 로컬에 rewrite가 없으므로
-http://localhost:8000/verification.html?code=482913 처럼 쿼리로 확인합니다.
+이메일 인증 화면은 메일 링크와 같은 주소로 그대로 확인합니다.
+http://localhost:8000/email/verification/482913 — `serve.py`가 `vercel.json`의 rewrite를
+읽어 배포와 같은 규칙을 적용합니다. `verification.html?code=482913` 쿼리 형태도
+여전히 받습니다.
 
 ## 배포 (Vercel)
 

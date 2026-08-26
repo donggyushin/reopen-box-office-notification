@@ -442,9 +442,14 @@ function readVerificationCode() {
   }
 
   var segments = location.pathname.split("/");
-  var last = segments[segments.length - 1];
+  var last = segments.pop();
 
-  // 마지막 조각이 비어 있거나 파일 이름이면 코드가 없는 주소다.
+  // 주소 끝에 슬래시가 붙어도 코드를 찾도록 한 칸 더 본다.
+  if (last === "") {
+    last = segments.pop() || "";
+  }
+
+  // 조각이 비어 있거나 파일 이름이면 코드가 없는 주소다.
   if (!last || last.indexOf(".") !== -1) {
     return "";
   }

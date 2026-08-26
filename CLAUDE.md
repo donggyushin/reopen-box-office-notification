@@ -102,10 +102,14 @@ the session.
 
 **`verification.html` is served from a path it does not live at.** The mail link is
 `/email/verification/<code>`; `vercel.json` rewrites that to `/verification.html`, and
-`readVerificationCode()` takes the code from the last path segment. Two consequences:
-the page must reference `/auth.js` and `/style.css` with absolute paths (relative ones
-would resolve under `/email/verification/`), and the local `http.server` has no rewrite,
-so test it as `verification.html?code=<code>` — the query form is the fallback branch in
+`readVerificationCode()` takes the code from the last path segment. So the page must
+reference `/auth.js` and `/style.css` with absolute paths — relative ones would resolve
+under `/email/verification/`.
+
+`serve.py` parses the rewrites out of `vercel.json` rather than restating them, so the
+mail link opens locally at the same address it does in production. Keep it that way: a
+rewrite written in two places is a rewrite that will disagree with itself. The
+`?code=<code>` query form still works and is the fallback branch in
 `readVerificationCode()`, not a second feature.
 
 ## Backend
