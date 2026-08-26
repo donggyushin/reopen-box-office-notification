@@ -269,6 +269,52 @@ function setupCredentialForm(options) {
   });
 }
 
+// "인증 메일 보내기" 버튼을 만든다. 홈과 인증 실패 화면이 같이 쓴다.
+// show(text, isError)로 결과를 알리고, 세션이 끝났으면 onDead()를 부른다.
+// 보낸 뒤에 할 일이 화면마다 달라서 성공 문구는 받아 쓴다.
+function verificationEmailButton(show, onDead, successText) {
+  var button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "인증 메일 보내기";
+
+  button.addEventListener("click", function () {
+    button.disabled = true;
+    show("인증 메일을 보내는 중...", false);
+
+    authorizedFetch("/users/email/verification", { method: "POST" })
+      .then(function (response) {
+        return response.text().then(function (body) {
+          return { ok: response.ok, status: response.status, body: body };
+        });
+      })
+      .then(function (result) {
+        if (result.status === 401) {
+          onDead();
+          return;
+        }
+
+        button.disabled = false;
+
+        if (!result.ok) {
+          show(messageFrom(result.body, result.status), true);
+          return;
+        }
+        show(successText, false);
+      })
+      .catch(function () {
+        // 재발급이 거절되면 토큰이 이미 지워져 있다. 연결 실패와 그걸 가른다.
+        if (!localStorage.getItem("accessToken")) {
+          onDead();
+          return;
+        }
+        show("서버에 연결할 수 없습니다.", true);
+        button.disabled = false;
+      });
+  });
+
+  return button;
+}
+
 // 로그인 후 화면을 API에 연결한다.
 // home.html이 greeting/profile/message/logout 요소를 선언하고 이 함수를 호출한다.
 function setupHome() {
@@ -328,46 +374,6 @@ function setupHome() {
     return cell;
   }
 
-  // 아직 인증 전인 사람에게만 붙는 버튼.
-  // 누르면 서버가 그 사람 메일로 인증 링크를 다시 보낸다.
-  function verifyButton(email) {
-    var button = document.createElement("button");
-    button.type = "button";
-    button.textContent = "인증 메일 보내기";
-
-    button.addEventListener("click", function () {
-      button.disabled = true;
-      show("인증 메일을 보내는 중...", false);
-
-      authorizedFetch("/users/email/verification", { method: "POST" })
-        .then(read)
-        .then(function (result) {
-          if (result.status === 401) {
-            toLogin();
-            return;
-          }
-
-          button.disabled = false;
-
-          if (!result.ok) {
-            show(messageFrom(result.body, result.status), true);
-            return;
-          }
-
-          // 인증은 메일의 링크에서 끝나므로 이 화면은 결과를 알 수 없다.
-          // 다시 열어야 상태가 갱신된다는 것까지 알려 준다.
-          show(
-            (email ? email + " 로 " : "") +
-              "인증 메일을 보냈습니다. 메일의 링크를 누른 뒤 이 화면을 새로고침해 주세요.",
-            false
-          );
-        })
-        .catch(handleFailure(button));
-    });
-
-    return button;
-  }
-
   function showProfile(me) {
     greeting.textContent = me.email
       ? me.email + " 님으로 로그인되었습니다."
@@ -382,7 +388,16 @@ function setupHome() {
       me.isEmailVerified ? "완료" : "미완료"
     );
     if (!me.isEmailVerified) {
-      verifyCell.appendChild(verifyButton(me.email));
+      // 인증은 메일의 링크에서 끝나므로 이 화면은 결과를 알 수 없다.
+      // 다시 열어야 상태가 갱신된다는 것까지 알려 준다.
+      verifyCell.appendChild(
+        verificationEmailButton(
+          show,
+          toLogin,
+          (me.email ? me.email + " 로 " : "") +
+            "인증 메일을 보냈습니다. 메일의 링크를 누른 뒤 이 화면을 새로고침해 주세요."
+        )
+      );
     }
     addRow(
       table,
@@ -457,19 +472,79 @@ function readVerificationCode() {
 }
 
 // 이메일 인증 페이지를 API에 연결한다.
-// verification.html이 message 요소를 선언하고 이 함수를 호출한다.
+// verification.html이 message/detail/actions 요소를 선언하고 이 함수를 호출한다.
 function setupEmailVerification() {
   var message = document.getElementById("message");
+  var detail = document.getElementById("detail");
+  var actions = document.getElementById("actions");
 
   function show(text, isError) {
     message.textContent = text;
     message.className = isError ? "error" : "ok";
   }
 
+  // 서버 원문은 "Unauthorized" 처럼 사람에게 쓸모없을 때가 있다.
+  // 그래서 우리 문장을 앞세우고 원문은 아래 작은 줄로 내린다. 형식이 바뀌거나
+  // 원인이 다를 때 화면만 보고도 알 수 있어야 해서 버리지는 않는다.
+  function showDetail(result) {
+    detail.textContent = "서버 응답: " + messageFrom(result.body, result.status);
+  }
+
+  function addLoginLink() {
+    var paragraph = document.createElement("p");
+    var link = document.createElement("a");
+    link.href = "/login.html";
+    link.textContent = "로그인";
+    paragraph.appendChild(link);
+    actions.appendChild(paragraph);
+  }
+
+  function addLine(text) {
+    var paragraph = document.createElement("p");
+    paragraph.textContent = text;
+    actions.appendChild(paragraph);
+  }
+
+  // 인증에 실패했으면 이 코드는 다시 쓸 수 없다. 로그인 링크만 남기는 대신
+  // 새 메일을 받을 길을 준다. 재발송에는 토큰이 필요하므로 로그인한 사람에게만
+  // 버튼이고, 아닌 사람은 로그인부터 해야 한다.
+  function offerAnotherEmail() {
+    actions.textContent = "";
+
+    if (
+      !localStorage.getItem("accessToken") &&
+      !localStorage.getItem("refreshToken")
+    ) {
+      addLine("로그인하면 인증 메일을 다시 받을 수 있습니다.");
+      addLoginLink();
+      return;
+    }
+
+    addLine("아래 버튼을 누르면 인증 메일을 다시 보냅니다.");
+
+    var paragraph = document.createElement("p");
+    paragraph.appendChild(
+      verificationEmailButton(
+        show,
+        function () {
+          // 재발송조차 거절당했다 — 이 화면에서 더 할 수 있는 일이 없다.
+          clearTokens();
+          detail.textContent = "";
+          actions.textContent = "";
+          show("세션이 만료되었습니다. 다시 로그인해 주세요.", true);
+          addLoginLink();
+        },
+        "인증 메일을 다시 보냈습니다. 메일의 새 링크를 눌러 주세요."
+      )
+    );
+    actions.appendChild(paragraph);
+  }
+
   var code = readVerificationCode();
 
   if (!code) {
     show("인증 코드가 없는 주소입니다. 메일의 링크를 다시 확인해 주세요.", true);
+    addLoginLink();
     return;
   }
 
@@ -486,11 +561,6 @@ function setupEmailVerification() {
       });
     })
     .then(function (result) {
-      if (!result.ok) {
-        show(messageFrom(result.body, result.status), true);
-        return;
-      }
-
       var data = {};
       try {
         data = JSON.parse(result.body);
@@ -498,15 +568,22 @@ function setupEmailVerification() {
         data = {};
       }
 
-      if (data.success) {
+      if (result.ok && data.success) {
         show("이메일 인증이 완료되었습니다.", false);
+        addLoginLink();
         return;
       }
 
-      // 200인데 success가 아닌 경우 — 응답 형식이 바뀐 것이므로 그대로 알린다.
-      show(messageFrom(result.body, result.status), true);
+      // 실패 응답도, 200인데 success가 아닌 경우도 이 코드는 못 쓴다는 뜻이다.
+      show(
+        "이메일 인증에 실패했습니다. 링크가 만료되었거나 이미 사용한 코드일 수 있습니다.",
+        true
+      );
+      showDetail(result);
+      offerAnotherEmail();
     })
     .catch(function () {
-      show("서버에 연결할 수 없습니다.", true);
+      // 코드가 아직 살아 있을 수도 있으므로 재발송을 권하지 않는다.
+      show("서버에 연결할 수 없습니다. 잠시 뒤 링크를 다시 열어 주세요.", true);
     });
 }

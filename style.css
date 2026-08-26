@@ -91,6 +91,15 @@ td button {
   font-size: 13px;
 }
 
+#detail:empty {
+  display: none;
+}
+
+#detail {
+  color: #666;
+  font-size: 12px;
+}
+
 .error {
   color: #c00;
 }

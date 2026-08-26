@@ -106,6 +106,18 @@ the session.
 reference `/auth.js` and `/style.css` with absolute paths — relative ones would resolve
 under `/email/verification/`.
 
+A failed code is a dead end for that link, so the page does not just report it and offer
+a login link — it offers a new email. Resending needs a bearer token, so `verification.html`
+splits on whether tokens exist: a signed-in visitor gets the same
+`verificationEmailButton()` the home page uses, and a signed-out one is told to log in
+first. A rejected `fetch` is the exception — the code may still be alive, so that path
+suggests reopening the link rather than burning it.
+
+This page also breaks the "show the server's message" rule on purpose. The backend
+answers an expired code with a bare `Unauthorized`, which tells a Korean user nothing, so
+`#message` carries our own sentence and `#detail` keeps the server's text in small gray
+type. Do not delete `#detail` — it is how a changed response shape stays visible.
+
 `serve.py` parses the rewrites out of `vercel.json` rather than restating them, so the
 mail link opens locally at the same address it does in production. Keep it that way: a
 rewrite written in two places is a rewrite that will disagree with itself. The
