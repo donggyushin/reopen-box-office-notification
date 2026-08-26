@@ -1,6 +1,12 @@
 // 백엔드 API 주소
 var API_BASE = "https://donggyu-sworld-production.up.railway.app";
 
+// 만료 몇 초 전부터 미리 재발급할지. 요청이 날아가는 사이에 만료되는 것을 막는다.
+var TOKEN_EXPIRY_SKEW_MS = 30 * 1000;
+
+// 진행 중인 재발급 요청. 동시 호출이 요청을 여러 번 보내지 않게 한다.
+var refreshInFlight = null;
+
 // 서버 에러 응답에서 보여줄 문구를 뽑는다.
 // message는 문자열일 수도, 검증 오류 배열일 수도 있다.
 function messageFrom(body, status) {
@@ -35,9 +41,9 @@ function clearTokens() {
   localStorage.removeItem("refreshToken");
 }
 
-// JWT 페이로드에서 email을 꺼낸다.
-// 서명 검증은 서버 몫이고, 여기서는 표시용으로만 쓴다.
-function readEmail(jwt) {
+// JWT 페이로드를 꺼낸다.
+// 서명 검증은 서버 몫이고, 여기서는 표시와 만료 판정에만 쓴다.
+function readPayload(jwt) {
   try {
     var base64 = jwt.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
     while (base64.length % 4) {
@@ -51,10 +57,130 @@ function readEmail(jwt) {
         })
         .join("")
     );
-    return JSON.parse(json).email || "";
+    return JSON.parse(json);
   } catch (e) {
-    return "";
+    return null;
   }
+}
+
+function readEmail(jwt) {
+  var payload = readPayload(jwt);
+  return (payload && payload.email) || "";
+}
+
+// 토큰이 만료되었는지 본다.
+// 읽을 수 없는 토큰은 만료로, exp가 없는 토큰은 유효한 것으로 본다.
+function isExpired(jwt) {
+  var payload = readPayload(jwt);
+  if (!payload) {
+    return true;
+  }
+  if (!payload.exp) {
+    return false;
+  }
+  return Date.now() >= payload.exp * 1000 - TOKEN_EXPIRY_SKEW_MS;
+}
+
+// refreshToken으로 토큰을 새로 받는다.
+// 두 곳에서 동시에 불려도 요청은 한 번만 나가도록 진행 중인 약속을 공유한다.
+function refreshTokens() {
+  if (refreshInFlight) {
+    return refreshInFlight;
+  }
+
+  var refreshToken = localStorage.getItem("refreshToken");
+  if (!refreshToken) {
+    clearTokens();
+    return Promise.reject(new Error("다시 로그인해 주세요."));
+  }
+
+  refreshInFlight = fetch(API_BASE + "/auth/refresh-token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refreshToken: refreshToken })
+  })
+    .then(function (response) {
+      return response.text().then(function (body) {
+        if (!response.ok) {
+          // 재발급이 거절되면 재로그인 외에 방법이 없으므로 토큰을 버린다.
+          // 연결 실패는 여기로 오지 않으므로 그때는 토큰을 그대로 둔다.
+          clearTokens();
+          throw new Error(messageFrom(body, response.status));
+        }
+
+        var data = {};
+        try {
+          data = JSON.parse(body);
+        } catch (e) {
+          data = {};
+        }
+
+        if (!saveTokens(data)) {
+          clearTokens();
+          throw new Error("재발급 응답에 토큰이 없습니다.");
+        }
+        return data.accessToken;
+      });
+    })
+    .then(
+      function (accessToken) {
+        refreshInFlight = null;
+        return accessToken;
+      },
+      function (error) {
+        refreshInFlight = null;
+        throw error;
+      }
+    );
+
+  return refreshInFlight;
+}
+
+// 지금 쓸 수 있는 accessToken을 돌려준다. 만료되었으면 먼저 재발급한다.
+// 재발급까지 실패하면 거절하므로, 부르는 쪽이 로그인 페이지로 보내면 된다.
+function ensureAccessToken() {
+  var accessToken = localStorage.getItem("accessToken");
+
+  if (accessToken && !isExpired(accessToken)) {
+    return Promise.resolve(accessToken);
+  }
+  return refreshTokens();
+}
+
+// 로그인한 사용자용 요청.
+// accessToken을 붙이고, 서버가 401을 주면 한 번만 재발급해 다시 보낸다.
+function authorizedFetch(path, options) {
+  var settings = options || {};
+
+  function send(accessToken, retried) {
+    var headers = {};
+    var given = settings.headers || {};
+    for (var key in given) {
+      if (Object.prototype.hasOwnProperty.call(given, key)) {
+        headers[key] = given[key];
+      }
+    }
+    headers.Authorization = "Bearer " + accessToken;
+
+    return fetch(API_BASE + path, {
+      method: settings.method || "GET",
+      headers: headers,
+      body: settings.body
+    }).then(function (response) {
+      if (response.status !== 401 || retried) {
+        return response;
+      }
+
+      // 우리 쪽 exp 계산보다 서버 판단이 먼저인 경우 — 재발급 후 한 번만 재시도한다.
+      return refreshTokens().then(function (accessToken) {
+        return send(accessToken, true);
+      });
+    });
+  }
+
+  return ensureAccessToken().then(function (accessToken) {
+    return send(accessToken, false);
+  });
 }
 
 // 이메일/비밀번호 폼을 API에 연결한다.

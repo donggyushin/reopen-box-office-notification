@@ -20,15 +20,25 @@
 
 <script src="auth.js"></script>
 <script>
-var token = localStorage.getItem("accessToken");
+var greeting = document.getElementById("greeting");
 
-// 토큰이 없으면 로그인하지 않은 상태로 보고 로그인 페이지로 보낸다.
-if (!token) {
+// 토큰이 아예 없으면 물어볼 것도 없이 로그인 페이지로 보낸다.
+if (!localStorage.getItem("accessToken") && !localStorage.getItem("refreshToken")) {
   location.replace("login.html");
 } else {
-  var email = readEmail(token);
-  document.getElementById("greeting").textContent =
-    email ? email + " 님으로 로그인되었습니다." : "로그인되었습니다.";
+  greeting.textContent = "확인 중...";
+
+  // accessToken이 만료되었으면 refreshToken으로 조용히 새로 받는다.
+  // 재발급까지 실패하면 그때 로그인 페이지로 보낸다.
+  ensureAccessToken()
+    .then(function (token) {
+      var email = readEmail(token);
+      greeting.textContent =
+        email ? email + " 님으로 로그인되었습니다." : "로그인되었습니다.";
+    })
+    .catch(function () {
+      location.replace("login.html");
+    });
 }
 
 document.getElementById("logout").addEventListener("click", function () {

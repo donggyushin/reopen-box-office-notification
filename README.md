@@ -13,7 +13,7 @@ vercel.json         /email/verification/:code → /verification.html rewrite
 ```
 
 가입이나 로그인에 성공하면 토큰을 `localStorage`에 저장하고 `home.html`로 이동합니다.
-`home.html`은 토큰이 없으면 `login.html`로 되돌립니다.
+`home.html`은 토큰이 없거나 재발급까지 실패하면 `login.html`로 되돌립니다.
 
 ## 로컬에서 보기
 
@@ -52,6 +52,7 @@ var API_BASE = "https://donggyu-sworld-production.up.railway.app";
 | 회원가입 | `POST /users` `{ email, password }` | `201` `{ accessToken, refreshToken }` |
 | 로그인 | `POST /users/login` `{ email, password }` | `201` `{ accessToken, refreshToken }` |
 | 이메일 인증 | `POST /users/verify/email` `{ code }` | `{ success: true }` |
+| 토큰 재발급 | `POST /auth/refresh-token` `{ refreshToken }` | `201` `{ accessToken, refreshToken }` |
 
 실패 응답은 `{ message, error, statusCode }` 형태이고, `message`는 문자열이거나
 검증 오류 배열(`["email must be an email", ...]`)입니다. 둘 다 화면에 그대로 표시합니다.
@@ -65,6 +66,7 @@ var API_BASE = "https://donggyu-sworld-production.up.railway.app";
 
 - 토큰을 `localStorage`에 두므로 XSS가 생기면 그대로 노출됩니다. 다음 단계로 넘어갈 때
   httpOnly 쿠키를 고려해 보세요.
-- `refreshToken`을 저장만 하고 갱신 로직은 아직 없습니다. accessToken이 만료되면
-  다시 로그인해야 합니다.
+- accessToken이 만료되면 `ensureAccessToken()`이 `refreshToken`으로 조용히 새로 받습니다.
+  재발급까지 거절되면 그때 토큰을 지우고 로그인 페이지로 돌립니다. 재발급은 페이지를
+  열 때와 `authorizedFetch()`를 부를 때만 일어나므로, 탭을 열어둔 채로는 갱신되지 않습니다.
 - `GET /users`가 인증 없이 전체 사용자 목록을 이메일까지 반환합니다.
