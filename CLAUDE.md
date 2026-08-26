@@ -85,7 +85,13 @@ only way to call an authenticated endpoint; `setupHome()` is its one caller toda
 declares `greeting`, `profile`, `message`, and `logout`, and the page's whole script is
 one `setupHome()` call. The profile table is built in JS, not markup, because one row
 carries a control: when `isEmailVerified` is false the "이메일 인증" cell also gets a
-resend button that POSTs to `/users/email/verification`. Verification finishes in the
+resend button that POSTs to `/users/email/verification`.
+
+**The table shows two rows, not the whole `/users/me` response.** Only 이메일 인증 and
+재개봉 알림 are there — the states this person can still do something about. `id`,
+`name`, `createdAt`, and `isAdmin` come back from the API and are deliberately dropped,
+and `email` already appears in the greeting above. Adding a field to the response should
+not add a row by default. Verification finishes in the
 mail link, not on this page, so the success message tells the user to reload — the page
 has no way to observe the result on its own. It paints the JWT email immediately so the page is never blank,
 then overwrites it with the `/users/me` response — the token is display-only scaffolding,

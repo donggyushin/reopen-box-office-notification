@@ -14,8 +14,8 @@ serve.py            로컬 확인용 정적 서버 (캐시 없음)
 ```
 
 가입이나 로그인에 성공하면 토큰을 `localStorage`에 저장하고 `home.html`로 이동합니다.
-`home.html`은 `GET /users/me`로 내 정보를 불러와 보여주고, 토큰이 없거나 재발급까지
-실패하면 `login.html`로 되돌립니다.
+`home.html`은 `GET /users/me`로 내 상태를 불러와 이메일 인증과 재개봉 알림 두 줄만
+보여주고, 토큰이 없거나 재발급까지 실패하면 `login.html`로 되돌립니다.
 
 ## 로컬에서 보기
 

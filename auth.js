@@ -269,22 +269,6 @@ function setupCredentialForm(options) {
   });
 }
 
-// ISO 날짜를 사람이 읽는 형태로 바꾼다. 파싱이 안 되면 원본을 그대로 둔다.
-function formatDate(value) {
-  var date = new Date(value);
-  if (!value || isNaN(date.getTime())) {
-    return value || "";
-  }
-  return (
-    date.getFullYear() +
-    "년 " +
-    (date.getMonth() + 1) +
-    "월 " +
-    date.getDate() +
-    "일"
-  );
-}
-
 // 로그인 후 화면을 API에 연결한다.
 // home.html이 greeting/profile/message/logout 요소를 선언하고 이 함수를 호출한다.
 function setupHome() {
@@ -389,11 +373,9 @@ function setupHome() {
       ? me.email + " 님으로 로그인되었습니다."
       : "로그인되었습니다.";
 
+    // 표에는 이 사람이 손댈 수 있는 상태만 남긴다. 이메일은 위 인사말에 이미
+    // 있고, 회원 번호나 가입일은 보고 나서 할 일이 없는 값이라 뺐다.
     var table = document.createElement("table");
-    addRow(table, "회원 번호", me.id);
-    addRow(table, "이메일", me.email);
-    addRow(table, "이름", me.name || "등록하지 않음");
-    addRow(table, "가입일", formatDate(me.createdAt));
     var verifyCell = addRow(
       table,
       "이메일 인증",
@@ -407,11 +389,6 @@ function setupHome() {
       "재개봉 알림",
       me.receiveReopenBoxOfficeNotifications ? "받는 중" : "받지 않음"
     );
-
-    // 관리자가 아닌 사람에게는 의미 없는 줄이므로 참일 때만 보여준다.
-    if (me.isAdmin) {
-      addRow(table, "관리자", "예");
-    }
 
     profile.textContent = "";
     profile.appendChild(table);
