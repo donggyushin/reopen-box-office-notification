@@ -49,13 +49,14 @@ theme: an animation added anywhere else has no such warrant.
 
 ## Architecture
 
-Four pages plus one shared script:
+Five pages plus one shared script:
 
 ```
 index.html          회원가입   ─┐
 login.html          로그인     ─┴─→ auth.js → home.html
 home.html           로그인 후 화면
 verification.html   이메일 인증 (메일 링크로 진입)
+password.html       비밀번호 재설정 (login.html 에서 진입)
 ```
 
 `auth.js` is the whole application layer. The non-obvious part is
@@ -164,6 +165,51 @@ answers an expired code with a bare `Unauthorized`, which tells a Korean user no
 `#message` carries our own sentence and `#detail` keeps the server's text in small gray
 type. Do not delete `#detail` — it is how a changed response shape stays visible.
 
+**`password.html` is one page holding three steps, and that is forced by the API.**
+The final `PATCH /users/password` takes `{ email, password }` — it identifies the account
+by address, not by the code just verified. So unlike `verification.html`, which finishes in
+the mail link and needs nothing but the code in the path, this flow has to still be holding
+the email when it reaches the last request. Keeping all three steps on one page is what
+keeps it in hand. `setupPasswordReset()` sends `sentEmail` — the address a code was actually
+mailed to — and not `#email`'s current value; the field is locked after step 1, so today they
+agree, but what gets a new password must be the address the code arrived at.
+
+Its DOM contract is three forms, not one: `email-form`/`email`/`send`,
+`code-form`/`code`/`verify`, `password-form`/`password`/`reset`, plus the shared `message`
+and `detail`. Each step is its own `<form>` so Enter submits the step you are standing in.
+The last two carry `hidden` in the markup and are revealed only by the step before them —
+that attribute is the gate, so do not drop it to "see the whole form".
+
+Finished steps are locked, not erased. The address has to stay readable while its code is
+being copied out of the mail, and the trail is the only thing telling you how far along you are.
+
+**None of the three calls carry a token, and that is the point.** Someone who has forgotten
+their password cannot log in, so `setupPasswordReset()` uses bare `fetch` rather than
+`authorizedFetch()`. If a step ever answers 401, the fix is that endpoint's guard — reaching
+for `authorizedFetch()` here would build a password reset only already-logged-in people can use.
+
+**The verify step fails in two shapes, and only one of them carries words.** A wrong code
+comes back as `201 { success: false }` — success's own status, with no message anywhere in
+the body — so `result.ok` alone would read it as a pass, and the sentence on screen has to be
+ours. Every other failure (`401 인증에 실패하였습니다.`, `409 이미 인증된 코드입니다.`) does
+carry accurate Korean, so those are shown verbatim. Hence the branch order: `ok && success`,
+then `ok`, then the server's text.
+
+`showFailure()` follows the house rule of showing the server's message, with 5xx carved out:
+`Internal server error` names neither what the person did nor what to do next, so that case
+alone gets our sentence with the server's text demoted to `#detail`.
+
+**Step 1 answers `201` for addresses that have no account.** The page cannot tell a real
+address from a typo, so it does not pretend to — the confirmation says a code was sent *and*
+that a missing mail means checking the address and reloading. Reload is the whole retry story
+here, same as elsewhere: there is no "send again" control, because a second mail to the same
+address changes nothing.
+
+**Do not read the `code` the server returns from step 1.** `POST /users/password/verification`
+currently answers `{"code":"699505"}` in the response body. Wiring that into the code field
+would make the page work beautifully and reduce the mail step to decoration — it is the one
+value on this screen that must travel through the user's inbox.
+
 `serve.py` parses the rewrites out of `vercel.json` rather than restating them, so the
 mail link opens locally at the same address it does in production. Keep it that way: a
 rewrite written in two places is a rewrite that will disagree with itself. The
@@ -182,10 +228,13 @@ branch, and a local backend must allow CORS from `http://localhost:8000`.
 |---|---|---|
 | 회원가입 | `POST /users` `{ email, password }` | `201` `{ accessToken, refreshToken }` |
 | 로그인 | `POST /users/login` `{ email, password }` | `201` `{ accessToken, refreshToken }` |
-| 이메일 인증 | `POST /users/verify/email` (Bearer) `{ code }` | `201` `{ success: true }` |
+| 이메일 인증 | `POST /users/verify/email` (Bearer) `{ email, code }` | `201` `{ success: true }` |
 | 토큰 재발급 | `POST /auth/refresh-token` `{ refreshToken }` | `201` `{ accessToken, refreshToken }` |
 | 내 정보 | `GET /users/me` (Bearer) | `200` `{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications }` |
 | 인증 메일 재발송 | `POST /users/email/verification` (Bearer, 바디 없음) | `201` |
+| 재설정 코드 요청 | `POST /users/password/verification` `{ email }` | `201` |
+| 재설정 코드 인증 | `POST /users/verify/password` `{ email, code }` | `201` `{ success: true }` |
+| 비밀번호 변경 | `PATCH /users/password` `{ email, password }` | `200` |
 | 재개봉 알림 설정 | `PATCH /users/receive-reopen-box-office-notifications` (Bearer) `{ value }` | `200` |
 
 Errors come back as `{ message, error, statusCode }` where **`message` is either a string
@@ -203,3 +252,10 @@ not the service. The Railway URL in `API_BASE` is reachable.
   accessToken expiry only recovers on its next call.
 - Tokens live in `localStorage`, so any XSS exposes them.
 - `GET /users` on the backend returns every user's email without authentication.
+- `PATCH /users/password` never checks that a code was verified. Sending `{ email, password }`
+  with no prior request or verification returns `200`, and the account then logs in with that
+  password — an email address alone is enough to take any account. Steps 1 and 2 are, as the
+  backend stands, ceremony that the frontend performs and the server does not enforce.
+- Both verification endpoints return their code in their own response body —
+  `POST /users/password/verification` and `POST /users/email/verification` alike — so either
+  code can be had without the mailbox it was meant to prove.

@@ -73,6 +73,17 @@ function readEmail(jwt) {
   return (payload && payload.email) || "";
 }
 
+// 지금 세션의 이메일. 인증 API들이 토큰과 별개로 본문에도 주소를 요구해서 쓴다.
+// accessToken이 만료됐어도 그 안의 주소는 여전히 이 사람의 주소이므로 그대로 읽고,
+// 없으면 refreshToken을 본다. 표시용이 아니라 요청에 실려 가는 값이지만, 주소를
+// 정하는 것은 어차피 서버가 토큰으로 확인하는 신원이다.
+function sessionEmail() {
+  return (
+    readEmail(localStorage.getItem("accessToken") || "") ||
+    readEmail(localStorage.getItem("refreshToken") || "")
+  );
+}
+
 // 토큰이 만료되었는지 본다.
 // 읽을 수 없는 토큰은 만료로, exp가 없는 토큰은 유효한 것으로 본다.
 function isExpired(jwt) {
@@ -722,10 +733,12 @@ function setupEmailVerification() {
 
   show("인증 중...", false);
 
+  // 토큰을 붙여 보내는데도 본문에 이메일을 또 요구한다. 빠뜨리면 코드에 닿기도
+  // 전에 400 "email must be a string" 으로 막힌다.
   authorizedFetch("/users/verify/email", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code: code })
+    body: JSON.stringify({ email: sessionEmail(), code: code })
   })
     .then(read)
     .then(function (result) {
@@ -763,4 +776,226 @@ function setupEmailVerification() {
       show("서버에 연결할 수 없습니다. 잠시 뒤 링크를 다시 열어 주세요.", true);
       addOnwardLink();
     });
+}
+
+// 비밀번호 재설정 화면을 API에 연결한다.
+// password.html이 email/code/password 세 폼과 message/detail 요소를 선언하고
+// 이 함수를 호출한다.
+//
+// 세 단계를 한 화면에 둔 이유는 마지막 PATCH가 이메일을 다시 요구하기 때문이다.
+// 메일의 링크에서 끝나는 이메일 인증과 달리 여기서는 주소를 끝까지 손에 쥐고
+// 있어야 해서, 코드를 받은 그 자리에서 이어 간다.
+//
+// 비밀번호를 잊은 사람은 로그인할 수 없다. 그래서 세 단계 모두 토큰 없이 부르고,
+// authorizedFetch가 아니라 맨 fetch를 쓴다. 이 화면에 authorizedFetch가 끼어드는
+// 순간 "이미 로그인한 사람만 쓸 수 있는 비밀번호 찾기"가 되므로, 어느 단계가
+// 401을 주더라도 고칠 곳은 이 파일이 아니라 그 엔드포인트의 가드다.
+function setupPasswordReset() {
+  var MIN_PASSWORD = 8;
+
+  var emailForm = document.getElementById("email-form");
+  var emailInput = document.getElementById("email");
+  var sendButton = document.getElementById("send");
+
+  var codeForm = document.getElementById("code-form");
+  var codeInput = document.getElementById("code");
+  var verifyButton = document.getElementById("verify");
+
+  var passwordForm = document.getElementById("password-form");
+  var passwordInput = document.getElementById("password");
+  var resetButton = document.getElementById("reset");
+
+  var message = document.getElementById("message");
+  var detail = document.getElementById("detail");
+
+  // 코드를 보낸 주소. 마지막 요청은 입력칸이 아니라 이 값을 쓴다.
+  // 칸은 잠가 두므로 지금은 같은 값이지만, 바꾸는 것은 주소가 아니라
+  // "코드가 도착한 그 주소"의 비밀번호여야 한다.
+  var sentEmail = "";
+
+  function show(text, isError) {
+    message.textContent = text;
+    message.className = isError ? "error" : "ok";
+    detail.textContent = "";
+  }
+
+  // 서버 원문은 작은 줄로 남긴다. 응답 형식이 바뀌거나 원인이 다를 때
+  // 화면만 보고도 알 수 있어야 한다. show() 뒤에 불러야 지워지지 않는다.
+  function showDetail(result) {
+    detail.textContent = "서버 응답: " + messageFrom(result.body, result.status);
+  }
+
+  // 서버가 주는 문구를 그대로 앞세우되 5xx는 예외로 둔다. 그쪽 본문은
+  // "Internal server error" 라서, 사용자가 무엇을 잘못했는지도 다음에 무엇을
+  // 해야 하는지도 알려 주지 않는다. 그때만 우리 문장을 세우고 원문을 내린다.
+  function showFailure(result) {
+    if (result.status >= 500) {
+      show("요청을 처리하지 못했습니다. 잠시 뒤 다시 시도해 주세요.", true);
+      showDetail(result);
+      return;
+    }
+    show(messageFrom(result.body, result.status), true);
+  }
+
+  function read(response) {
+    return response.text().then(function (body) {
+      return { ok: response.ok, status: response.status, body: body };
+    });
+  }
+
+  // 끝난 단계는 지우지 않고 잠근다. 어느 주소로 보냈는지가 코드를 옮겨 적는
+  // 동안에도 보여야 하고, 지나온 칸이 남아 있어야 어디까지 왔는지 알 수 있다.
+  function lock(input, button) {
+    input.disabled = true;
+    button.disabled = true;
+  }
+
+  function reveal(form, input) {
+    form.hidden = false;
+    input.focus();
+  }
+
+  // 1단계 — 코드를 메일로 받는다.
+  emailForm.addEventListener("submit", function (event) {
+    event.preventDefault();
+
+    var email = emailInput.value.trim();
+    if (!email || email.indexOf("@") === -1) {
+      show("이메일 주소를 확인해 주세요.", true);
+      emailInput.focus();
+      return;
+    }
+
+    sendButton.disabled = true;
+    show("인증 코드를 보내는 중...", false);
+
+    fetch(API_BASE + "/users/password/verification", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email })
+    })
+      .then(read)
+      .then(function (result) {
+        if (!result.ok) {
+          sendButton.disabled = false;
+          showFailure(result);
+          return;
+        }
+
+        // 서버는 이 응답에 code까지 실어 보낸다. 읽지 않는다 — 그 값을 쓰면
+        // 메일함을 거치지 않고 비밀번호를 바꿀 수 있게 되고, 그건 이 절차가
+        // 막으라고 있는 바로 그 일이다. 코드는 사람이 메일에서 옮겨 적는다.
+        sentEmail = email;
+        lock(emailInput, sendButton);
+        reveal(codeForm, codeInput);
+
+        // 없는 계정에도 서버는 똑같이 201을 준다. 그래서 이 화면은 주소가
+        // 맞는지 알 수 없고, 알 수 없다는 사실을 그대로 적는다.
+        show(
+          email +
+            " 로 인증 코드를 보냈습니다. 메일이 오지 않으면 주소를 확인하고 새로고침해 주세요.",
+          false
+        );
+      })
+      .catch(function () {
+        sendButton.disabled = false;
+        show("서버에 연결할 수 없습니다.", true);
+      });
+  });
+
+  // 2단계 — 받은 코드를 확인받는다.
+  codeForm.addEventListener("submit", function (event) {
+    event.preventDefault();
+
+    var code = codeInput.value.trim();
+    if (!code) {
+      show("메일로 받은 인증 코드를 입력해 주세요.", true);
+      codeInput.focus();
+      return;
+    }
+
+    verifyButton.disabled = true;
+    show("인증 중...", false);
+
+    fetch(API_BASE + "/users/verify/password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: sentEmail, code: code })
+    })
+      .then(read)
+      .then(function (result) {
+        var data = {};
+        try {
+          data = JSON.parse(result.body);
+        } catch (e) {
+          data = {};
+        }
+
+        if (result.ok && data.success) {
+          lock(codeInput, verifyButton);
+          reveal(passwordForm, passwordInput);
+          show("인증되었습니다. 새 비밀번호를 정해 주세요.", false);
+          return;
+        }
+
+        verifyButton.disabled = false;
+        codeInput.focus();
+        codeInput.select();
+
+        // 틀린 코드는 실패 응답이 아니라 201 { success: false } 로 돌아온다.
+        // 성공과 같은 상태 코드에 문구가 한 줄도 실려 있지 않으므로, 이 경우의
+        // 문장은 서버에서 꺼내 올 수가 없고 우리가 쓴다.
+        if (result.ok) {
+          show("인증 코드가 맞지 않습니다. 메일에 적힌 숫자를 다시 확인해 주세요.", true);
+          return;
+        }
+
+        // 나머지 실패에는 서버가 한국어 문구를 실어 보낸다 — "이미 인증된
+        // 코드입니다." 처럼 우리가 지어낼 수 있는 것보다 정확하므로 그대로 쓴다.
+        // 5xx 만 showFailure 가 갈라내 우리 문장으로 바꾸고 원문을 아래로 내린다.
+        showFailure(result);
+      })
+      .catch(function () {
+        verifyButton.disabled = false;
+        show("서버에 연결할 수 없습니다.", true);
+      });
+  });
+
+  // 3단계 — 새 비밀번호를 건다.
+  passwordForm.addEventListener("submit", function (event) {
+    event.preventDefault();
+
+    var password = passwordInput.value;
+    if (password.length < MIN_PASSWORD) {
+      show("비밀번호는 " + MIN_PASSWORD + "자 이상이어야 합니다.", true);
+      passwordInput.focus();
+      return;
+    }
+
+    resetButton.disabled = true;
+    show("비밀번호를 바꾸는 중...", false);
+
+    fetch(API_BASE + "/users/password", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: sentEmail, password: password })
+    })
+      .then(read)
+      .then(function (result) {
+        if (!result.ok) {
+          resetButton.disabled = false;
+          showFailure(result);
+          return;
+        }
+
+        // 이 API는 토큰을 주지 않으므로 여기서 로그인시킬 방법이 없고,
+        // 바뀐 비밀번호를 쓸 자리는 로그인 화면이다. 아래 링크가 그 자리다.
+        lock(passwordInput, resetButton);
+        show("비밀번호를 바꿨습니다. 새 비밀번호로 로그인해 주세요.", false);
+      })
+      .catch(function () {
+        resetButton.disabled = false;
+        show("서버에 연결할 수 없습니다.", true);
+      });
+  });
 }
