@@ -514,14 +514,24 @@ function setupEmailVerification() {
     detail.textContent = "서버 응답: " + messageFrom(result.body, result.status);
   }
 
+  // 이 화면은 어느 갈래로 끝나든 다음으로 갈 곳을 준다.
+  // 인증에는 로그인이 필요하므로, 로그인한 사람에게 로그인 링크를 주는 것은
+  // 할 일이 없는 안내다. 세션이 있으면 홈으로, 없으면 로그인으로 보낸다.
   // 로그인하고 나면 이 주소로 돌아와 인증을 이어서 한다.
-  function addLoginLink() {
+  function addOnwardLink() {
     var paragraph = document.createElement("p");
     var link = document.createElement("a");
-    link.href =
-      "/login.html?next=" +
-      encodeURIComponent(location.pathname + location.search);
-    link.textContent = "로그인";
+
+    if (hasSession()) {
+      link.href = "/home.html";
+      link.textContent = "홈으로";
+    } else {
+      link.href =
+        "/login.html?next=" +
+        encodeURIComponent(location.pathname + location.search);
+      link.textContent = "로그인";
+    }
+
     paragraph.appendChild(link);
     actions.appendChild(paragraph);
   }
@@ -552,7 +562,7 @@ function setupEmailVerification() {
 
     if (!hasSession()) {
       addLine("로그인하면 인증 메일을 다시 받을 수 있습니다.");
-      addLoginLink();
+      addOnwardLink();
       return;
     }
 
@@ -568,19 +578,22 @@ function setupEmailVerification() {
           detail.textContent = "";
           actions.textContent = "";
           show("세션이 만료되었습니다. 다시 로그인해 주세요.", true);
-          addLoginLink();
+          addOnwardLink();
         },
         "인증 메일을 다시 보냈습니다. 메일의 새 링크를 눌러 주세요."
       )
     );
     actions.appendChild(paragraph);
+
+    // 메일을 기다리지 않고 나갈 수도 있어야 한다.
+    addOnwardLink();
   }
 
   var code = readVerificationCode();
 
   if (!code) {
     show("인증 코드가 없는 주소입니다. 메일의 링크를 다시 확인해 주세요.", true);
-    addLoginLink();
+    addOnwardLink();
     return;
   }
 
@@ -589,7 +602,7 @@ function setupEmailVerification() {
   if (!hasSession()) {
     show("이 링크로 인증하려면 먼저 로그인해야 합니다.", true);
     addLine("로그인하면 이 화면으로 돌아와 인증을 이어서 합니다.");
-    addLoginLink();
+    addOnwardLink();
     return;
   }
 
@@ -611,7 +624,7 @@ function setupEmailVerification() {
 
       if (result.ok && data.success) {
         show("이메일 인증이 완료되었습니다.", false);
-        addLoginLink();
+        addOnwardLink();
         return;
       }
 
@@ -627,11 +640,13 @@ function setupEmailVerification() {
       // 재발급이 거절되면 토큰이 이미 지워져 있다. 연결 실패와 그걸 가른다.
       if (!localStorage.getItem("accessToken")) {
         show("세션이 만료되었습니다. 다시 로그인한 뒤 링크를 열어 주세요.", true);
-        addLoginLink();
+        addOnwardLink();
         return;
       }
 
-      // 코드가 아직 살아 있을 수도 있으므로 재발송을 권하지 않는다.
+      // 코드가 아직 살아 있을 수도 있으므로 재발송은 권하지 않는다.
+      // 그래도 이 화면에 가둬 두지는 않는다.
       show("서버에 연결할 수 없습니다. 잠시 뒤 링크를 다시 열어 주세요.", true);
+      addOnwardLink();
     });
 }

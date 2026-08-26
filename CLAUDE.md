@@ -120,8 +120,14 @@ refresh and one retry before reporting it. That is wasted work, not a bug — do
 skip it by sniffing the `error` key, which would couple the page to the backend's error
 shape.
 
+Every branch of this page ends with one onward link, and `addOnwardLink()` picks it from
+session state: signed in goes to `home.html`, signed out goes to
+`login.html?next=<this path>`. Because verifying now requires a session, a successful
+verification means the visitor is already signed in — offering them "로그인" there is an
+action with nothing behind it.
+
 A failed code is a dead end for that link, so the page does not just report it and offer
-a login link — it offers a new email. Resending needs a bearer token, so `verification.html`
+a way out — it offers a new email. Resending needs a bearer token, so `verification.html`
 splits on whether tokens exist: a signed-in visitor gets the same
 `verificationEmailButton()` the home page uses, and a signed-out one is told to log in
 first. A rejected `fetch` is the exception — the code may still be alive, so that path
