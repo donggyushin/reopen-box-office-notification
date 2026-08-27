@@ -49,12 +49,13 @@ theme: an animation added anywhere else has no such warrant.
 
 ## Architecture
 
-Five pages plus one shared script:
+Six pages plus one shared script:
 
 ```
 login.html          로그인      ─┐   ← /  (vercel.json rewrite)
 signup.html         회원가입    ─┴─→ auth.js → home.html
 home.html           로그인 후 화면
+users.html          회원 목록 (관리자 전용, home.html 에서 진입)
 verification.html   이메일 인증 (메일 링크로 진입)
 password.html       비밀번호 재설정 (login.html 에서 진입)
 ```
@@ -103,15 +104,18 @@ on a 401, since the server is the authority on expiry, not the local clock. It i
 only way to call an authenticated endpoint; `setupHome()` is its one caller today.
 
 `setupHome()` follows the same DOM contract as `setupCredentialForm()`: `home.html`
-declares `reopen`, `greeting`, `profile`, `message`, `chart`, and `logout`, and the page's
-whole script is one `setupHome()` call. The profile table is built in JS, not markup, because one row
+declares `reopen`, `greeting`, `profile`, `message`, `chart`, `admin`, and `logout`, and the
+page's whole script is one `setupHome()` call. The profile table is built in JS, not markup, because one row
 carries a control: when `isEmailVerified` is false the "이메일 인증" cell also gets a
 resend button that POSTs to `/users/email/verification`.
 
 **The table shows two rows, not the whole `/users/me` response.** Only 이메일 인증 and
 재개봉 알림 are there — the states this person can still do something about. `id`,
 `name`, `createdAt`, and `isAdmin` come back from the API and are deliberately dropped,
-and `email` already appears in the greeting above. Adding a field to the response should
+and `email` already appears in the greeting above. `isAdmin` is dropped from the table but
+not thrown away: it is what puts the `회원 목록` link in `#admin`, which is the only way in
+to `users.html`. A row would say what this account is; a link says where it can go, and
+that is the only thing this person can do with the fact. Adding a field to the response should
 not add a row by default. The 재개봉 알림 row is not a control at all: when
 `isEmailVerified` is true and `receiveReopenBoxOfficeNotifications` is false, drawing the
 row fires the PATCH itself. Both conditions matter — turning notifications on before the
@@ -175,6 +179,48 @@ One row out of ten is exactly the thing this whole service exists to announce, a
 table it has to be found. When the list holds no reopening film, `#reopen` says so in
 words. It is left empty — and `#reopen:empty` hides it — only when no list arrived at all,
 because "there are none today" and "we could not ask" must not look alike.
+
+**`users.html` is gated in sequence, and that is the opposite of home.** `setupUserList()`
+asks `/users/me` first and calls nothing else until the answer comes back with
+`isAdmin: true`. Home fires `/users/me` and the box office side by side because neither
+waits on the other; here the order *is* the gate — a visitor with no right to the list must
+never have other people's addresses in their browser, not even for the moment before a
+redirect. A signed-in non-admin is told so in `#message` and left standing on the page:
+bouncing them to home silently is indistinguishable from a broken link.
+
+Know what that gate is worth. `GET /users` and `GET /users/count` take no token at all
+(see 알아둘 점), so this is a gate on the screen, not on the data — anyone can still curl
+the list. `authorizedFetch()` is used anyway, because the whole page is admin-only and a
+dead session should end in `login.html`, and because the day those endpoints get their
+guard this page will already be sending the header. That is the exact opposite of
+`loadBoxOffice()`, where a 401 must never be allowed to log anyone out.
+
+**The list shows five columns, and the ones it drops are dropped for different reasons.**
+`name` is null for every account the signup form can create, so a column of blanks would
+say nothing; `id` stays because it is the handle you use when you go ask the backend about
+someone. `isAdmin` is a `<small>` beside the address rather than a sixth column of empty
+cells. True values are the same static `checkMark()` the profile table uses and false
+values are the same words — `미완료`, `받지 않음` — so one vocabulary covers both screens.
+The mark is never `animated` here: drawing itself means "this just happened", and nothing
+on this page just happened.
+
+**Paging asks how many there are once, and waits for the answer before the first draw.**
+`GET /users/count` is fetched alongside page one and `Promise.all` holds the draw until
+both land, because the total decides two things at once — the caption above the table and
+whether 다음 is live — and taking it late means repainting a table that was already right.
+It is never asked again: a number that moves while you page turns the caption into a lie
+about the rows underneath it. When the count fails the page says nothing about it (the
+list arrived; an error line would make the list look doubtful) and falls back to guessing
+from length — a full page means there may be another. That guess can be wrong by exactly
+one empty page, which is why an empty page past the first says so in words and leaves
+이전 alive.
+
+The pager is not drawn when there is nowhere to go, and not drawn at all when the list
+never arrived — a lone 다음 button under a failed request points at a page that was never
+there. When it is drawn both buttons stay, one of them disabled, so 다음 does not move
+under the cursor as 이전 appears.
+
+`main.wide` exists for this page only. 320px is a form's width; five columns need more.
 
 **`verification.html` is served from a path it does not live at.** The mail link is
 `/email/verification/<code>`; `vercel.json` rewrites that to `/verification.html`, and
@@ -290,6 +336,12 @@ branch, and a local backend must allow CORS from `http://localhost:8000`.
 | 비밀번호 변경 | `PATCH /users/password` `{ email, password }` | `200` |
 | 재개봉 알림 설정 | `PATCH /users/receive-reopen-box-office-notifications` (Bearer) `{ value }` | `200` |
 | 일별 박스오피스 | `GET /box-office/daily` (토큰 없음) | `200` `{ boxOfficeList: [{ rank, movieNm, openDt, audiCnt, salesShare, isReopen, ... }] }` |
+| 회원 목록 | `GET /users?limit=&offset=&order=` (가드 없음) | `200` `[{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications }]` |
+| 회원 수 | `GET /users/count` (가드 없음) | `200` `{ totalUserCount }` |
+
+`GET /users` 는 배열을 그대로 돌려준다 — 총원도 다음 페이지 여부도 본문에 없어서
+`/users/count` 가 따로 있다. `limit` 은 1..100 정수, `order` 는 `asc`/`desc` 만 받고
+벗어나면 `400` 에 검증 문구 배열이 실려 온다. 범위를 넘긴 `offset` 은 빈 배열이다.
 
 Errors come back as `{ message, error, statusCode }` where **`message` is either a string
 or an array** of validation strings. `messageFrom()` in `auth.js` handles both; anything
@@ -305,7 +357,10 @@ not the service. The Railway URL in `API_BASE` is reachable.
   `authorizedFetch()`, but nothing renews on a timer, so a tab left open past the 1h
   accessToken expiry only recovers on its next call.
 - Tokens live in `localStorage`, so any XSS exposes them.
-- `GET /users` on the backend returns every user's email without authentication.
+- `GET /users` and `GET /users/count` on the backend take no token — every user's email is
+  readable by anyone. `users.html` gates itself on `isAdmin`, but that gate lives entirely
+  in the browser; it decides who sees the screen, not who can read the data. Moving it to
+  the server is the fix, and until then do not describe the page as protecting anything.
 - `PATCH /users/password` never checks that a code was verified. Sending `{ email, password }`
   with no prior request or verification returns `200`, and the account then logs in with that
   password — an email address alone is enough to take any account. Steps 1 and 2 are, as the

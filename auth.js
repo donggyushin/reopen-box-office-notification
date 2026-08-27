@@ -650,7 +650,7 @@ function loadBoxOffice(chart, highlight) {
 }
 
 // 로그인 후 화면을 API에 연결한다.
-// home.html이 reopen/greeting/profile/message/chart/logout 요소를 선언하고
+// home.html이 reopen/greeting/profile/message/chart/admin/logout 요소를 선언하고
 // 이 함수를 호출한다.
 function setupHome() {
   var greeting = document.getElementById("greeting");
@@ -659,6 +659,7 @@ function setupHome() {
   var logout = document.getElementById("logout");
   var chart = document.getElementById("chart");
   var reopen = document.getElementById("reopen");
+  var admin = document.getElementById("admin");
 
   function show(text, isError) {
     message.textContent = text;
@@ -756,6 +757,16 @@ function setupHome() {
 
     profile.textContent = "";
     profile.appendChild(table);
+
+    // 관리자에게만 회원 목록으로 가는 길을 낸다. isAdmin 은 위 표에 넣지 않는다 —
+    // 그건 이 사람이 손댈 수 있는 상태가 아니라 화면 밖에 문이 하나 더 있다는
+    // 뜻이라서, 값이 앉을 자리는 표의 줄이 아니라 링크다.
+    if (me.isAdmin) {
+      var link = document.createElement("a");
+      link.href = "users.html";
+      link.textContent = "회원 목록";
+      admin.appendChild(link);
+    }
   }
 
   // 응답을 기다리는 동안 화면이 비지 않도록 토큰 안의 이메일을 먼저 띄운다.
@@ -797,6 +808,348 @@ function setupHome() {
     .catch(function (error) {
       profile.textContent = "";
       handleFailure(null)(error);
+    });
+}
+
+// 회원 목록 화면을 API에 연결한다.
+// users.html이 message/users/pager 요소를 선언하고 이 함수를 호출한다.
+//
+// 이 화면은 관리자만 본다. 문을 지키는 것은 /users/me 의 isAdmin 하나이고, 그
+// 답이 오기 전에는 목록을 부르지도 않는다 — /users/me 와 박스오피스를 나란히
+// 보내는 홈과 반대로 여기서는 순서가 곧 가드다. 볼 자격이 없는 사람의 브라우저에
+// 남의 주소가 잠깐이라도 실릴 이유는 없다.
+//
+// 목록과 총원에는 authorizedFetch 를 쓴다. 두 API 는 지금 토큰을 보지 않지만
+// (그래서 이 가드는 화면의 가드일 뿐 서버의 가드가 아니다 — README 의 "알아둘 점"),
+// 이 화면은 통째로 관리자 전용이라 세션이 끝났으면 로그인으로 돌아가는 편이 맞다.
+// 순위를 못 그린 일이 세션을 끝내면 안 되는 loadBoxOffice() 와 정확히 반대쪽이다.
+function setupUserList() {
+  // 한 번에 스무 명. limit 은 서버가 1..100 만 받는다.
+  var PAGE_SIZE = 20;
+
+  var message = document.getElementById("message");
+  var list = document.getElementById("users");
+  var pager = document.getElementById("pager");
+
+  // 지금 보고 있는 페이지의 시작 위치와, 거기 그려진 줄 수. 줄 수는 다음 페이지를
+  // 불러오다 실패했을 때 버튼을 원래대로 되살리는 데 쓴다.
+  var offset = 0;
+  var shown = 0;
+
+  // 전체 회원 수. 화면을 열 때 한 번만 센다 — 페이지를 넘길 때마다 다시 세면 그
+  // 사이 가입한 사람 때문에 수가 흔들려 지금 보고 있는 목록과 어긋난다. 세지
+  // 못하면 null 로 남고, 그때는 마지막 페이지인지를 목록 길이로 짐작한다.
+  var total = null;
+  var counted = null;
+
+  function show(text, isError) {
+    message.textContent = text;
+    message.className = isError ? "error" : "ok";
+  }
+
+  function toLogin() {
+    clearTokens();
+    location.replace("login.html");
+  }
+
+  function read(response) {
+    return response.text().then(function (body) {
+      return { ok: response.ok, status: response.status, body: body };
+    });
+  }
+
+  function parse(body) {
+    try {
+      return JSON.parse(body);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function element(name, className, text) {
+    var node = document.createElement(name);
+    if (className) {
+      node.className = className;
+    }
+    if (text) {
+      node.textContent = text;
+    }
+    return node;
+  }
+
+  function pad(value) {
+    return (value < 10 ? "0" : "") + value;
+  }
+
+  // 가입일. ISO 문자열을 그대로 적으면 시각까지 딸려 와 칸이 넓어지므로 날짜만
+  // 남긴다. 읽을 수 없는 값은 손대지 않고 그대로 적는다 — 응답 형식이 바뀐 것을
+  // 화면만 보고도 알아볼 수 있어야 한다.
+  function dayText(value) {
+    if (!value) {
+      return "";
+    }
+
+    var date = new Date(value);
+    if (isNaN(date.getTime())) {
+      return String(value);
+    }
+    return (
+      date.getFullYear() +
+      "-" +
+      pad(date.getMonth() + 1) +
+      "-" +
+      pad(date.getDate())
+    );
+  }
+
+  function headCell(row, label, className) {
+    row.appendChild(element("th", className, label));
+  }
+
+  // 값 칸은 홈의 표와 같은 규칙을 따른다 — 켜진 값은 체크 표시로, 꺼진 값은
+  // 글자로 적는다. 다만 선을 그리는 애니메이션은 여기에 없다. 그 움직임은
+  // "방금 그렇게 됐다"는 뜻인데, 이 목록의 값은 전부 남이 이미 해 둔 일이다.
+  function stateCell(row, on, onLabel, offText) {
+    var cell = row.insertCell();
+    cell.className = "state";
+    if (on) {
+      cell.appendChild(checkMark(onLabel, false));
+    } else {
+      cell.textContent = offText;
+    }
+  }
+
+  // 표 위 한 줄. 전체가 몇 명인지와 지금 어디를 보고 있는지를 적는다. 총원을
+  // 세지 못했으면 세지 못한 대로 적는다 — 모르는 수를 지어내지 않는다.
+  function captionText() {
+    var range = offset + 1 + "-" + (offset + shown) + "번째";
+
+    if (total == null) {
+      return range;
+    }
+    if (total <= PAGE_SIZE) {
+      return "전체 " + total + "명";
+    }
+    return "전체 " + total + "명 중 " + range;
+  }
+
+  function buildTable(rows) {
+    var table = element("table", "users");
+    table.appendChild(element("caption", null, captionText()));
+
+    // 줄은 표가 아니라 thead/tbody 에 직접 넣는다. table.insertRow() 는 이미 있는
+    // 마지막 tr 의 부모에 붙이는 규칙이라, 머리줄을 먼저 만들면 본문 줄까지
+    // thead 안으로 들어간다.
+    var head = table.createTHead().insertRow();
+    headCell(head, "번호", "id");
+    headCell(head, "이메일", "email");
+    headCell(head, "가입일", "day");
+    headCell(head, "이메일 인증", "state");
+    headCell(head, "재개봉 알림", "state");
+
+    var body = table.createTBody();
+    rows.forEach(function (user) {
+      var row = body.insertRow();
+
+      var id = row.insertCell();
+      id.className = "id";
+      id.textContent = user.id == null ? "" : String(user.id);
+
+      var email = row.insertCell();
+      email.className = "email";
+      email.textContent = user.email || "";
+      // 관리자는 몇 안 되지만 이 화면을 열 수 있는 사람이 누구인지는 목록이
+      // 답해야 한다. 칸을 하나 더 세울 값은 아니라 주소 옆에 작게 적는다.
+      if (user.isAdmin) {
+        email.appendChild(element("small", null, " 관리자"));
+      }
+
+      var day = row.insertCell();
+      day.className = "day";
+      day.textContent = dayText(user.createdAt);
+
+      stateCell(row, user.isEmailVerified, "완료", "미완료");
+      stateCell(row, user.receiveReopenBoxOfficeNotifications, "받는 중", "받지 않음");
+    });
+
+    return table;
+  }
+
+  function pageButton(label, disabled, step) {
+    var button = element("button", null, label);
+    button.type = "button";
+    button.disabled = disabled;
+    button.addEventListener("click", function () {
+      load(offset + step * PAGE_SIZE);
+    });
+    return button;
+  }
+
+  // 이전/다음. 넘길 곳이 아예 없으면 버튼을 만들지 않는다 — 누를 수 없는 버튼
+  // 두 개는 이 화면에서 할 수 있는 일을 잘못 알린다. 넘길 수 있는 동안에는 한쪽이
+  // 꺼져 있어도 둘 다 둔다. 버튼이 생겼다 없어지면 다음 페이지를 누르려던 자리가
+  // 그때마다 옮겨 간다.
+  function drawPager() {
+    var more = total == null ? shown === PAGE_SIZE : offset + shown < total;
+
+    pager.textContent = "";
+
+    // 아직 아무것도 그리지 못한 자리에는 버튼을 두지 않는다. 첫 페이지를 불러오다
+    // 실패했을 때가 그런데, 총원만 먼저 도착해 있으면 "다음"이 켜진 채 남아
+    // 없는 다음 페이지를 가리키게 된다.
+    if (!list.firstChild) {
+      return;
+    }
+
+    if (!offset && !more) {
+      return;
+    }
+
+    pager.appendChild(pageButton("이전", !offset, -1));
+    pager.appendChild(pageButton("다음", !more, 1));
+  }
+
+  function lockPager() {
+    var buttons = pager.getElementsByTagName("button");
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].disabled = true;
+    }
+  }
+
+  function draw(rows) {
+    shown = rows.length;
+
+    list.textContent = "";
+    if (shown) {
+      list.appendChild(buildTable(rows));
+    } else {
+      // 첫 페이지가 비는 것은 회원이 하나도 없다는 뜻이고, 뒷 페이지가 비는 것은
+      // 총원을 세지 못한 채 "다음"을 짐작으로 열어 둔 경우다. 뜻이 다르니 다르게
+      // 적는다 — 뒤쪽은 "이전"이 그대로 남아 있어 눌러서 돌아올 수 있다.
+      list.appendChild(
+        element(
+          "p",
+          null,
+          offset ? "이 페이지에는 회원이 없습니다." : "아직 회원이 없습니다."
+        )
+      );
+    }
+
+    drawPager();
+  }
+
+  // 한 페이지를 불러와 그린다. 실패하면 보고 있던 표는 그대로 두고 버튼만
+  // 되살린다 — 다음 페이지를 못 불러온 벌로 지금 페이지까지 사라질 이유가 없다.
+  function load(next) {
+    lockPager();
+    show("회원 목록을 불러오는 중...", false);
+
+    // order=desc 는 최근에 가입한 사람부터다. 이 화면을 여는 이유는 대개
+    // "요즘 누가 들어왔나"라서 그쪽을 첫 페이지에 둔다.
+    var request = authorizedFetch(
+      "/users?limit=" + PAGE_SIZE + "&offset=" + next + "&order=desc"
+    ).then(read);
+
+    // 총원이 아직 오지 않았으면 기다렸다 함께 그린다. 표 위 한 줄과 "다음" 버튼이
+    // 둘 다 그 수에 달려 있어서, 늦게 받아 고쳐 쓰면 방금 그린 화면을 다시 그리게
+    // 된다. 세기에 실패한 약속도 값으로 끝나므로 여기서 먼저 깨지지 않는다.
+    Promise.all([request, counted])
+      .then(function (values) {
+        var result = values[0];
+
+        if (result.status === 401) {
+          // 재발급까지 하고도 거절당했다면 세션이 끝난 것이다.
+          toLogin();
+          return;
+        }
+
+        if (!result.ok) {
+          show(messageFrom(result.body, result.status), true);
+          drawPager();
+          return;
+        }
+
+        var rows = parse(result.body);
+        offset = next;
+        show("", false);
+        draw(Array.isArray(rows) ? rows : []);
+      })
+      .catch(function () {
+        // 재발급이 거절되면 토큰이 이미 지워져 있다. 연결 실패와 그걸 가른다.
+        if (!localStorage.getItem("accessToken")) {
+          location.replace("login.html");
+          return;
+        }
+        show("서버에 연결할 수 없습니다.", true);
+        drawPager();
+      });
+  }
+
+  // 총원을 센다. 실패해도 조용히 넘어간다 — 목록은 멀쩡히 나왔는데 머릿수를 못
+  // 셌다고 화면에 에러를 적으면, 보고 있는 목록까지 못 믿을 것처럼 보인다.
+  function countUsers() {
+    return authorizedFetch("/users/count")
+      .then(read)
+      .then(function (result) {
+        if (!result.ok) {
+          return;
+        }
+
+        var count = (parse(result.body) || {}).totalUserCount;
+        if (typeof count === "number" && isFinite(count) && count >= 0) {
+          total = count;
+        }
+      })
+      .catch(function () {
+        // 세지 못했다. 목록은 목록대로 그린다.
+      });
+  }
+
+  // 토큰이 아예 없으면 물어볼 것도 없이 로그인으로 보낸다. 홈과 달리 돌아올 곳을
+  // 남기는데, 홈은 로그인하면 어차피 닿는 자리지만 여기는 주소를 알고 찾아온
+  // 자리라 로그인시키고 나서 다시 데려다 놓아야 한다.
+  if (!hasSession()) {
+    location.replace(
+      "login.html?next=" +
+        encodeURIComponent(location.pathname + location.search)
+    );
+    return;
+  }
+
+  show("회원 목록을 불러오는 중...", false);
+
+  authorizedFetch("/users/me")
+    .then(read)
+    .then(function (result) {
+      if (result.status === 401) {
+        toLogin();
+        return;
+      }
+
+      if (!result.ok) {
+        show(messageFrom(result.body, result.status), true);
+        return;
+      }
+
+      var me = parse(result.body) || {};
+      if (!me.isAdmin) {
+        // 로그인은 했지만 볼 자격이 없다. 조용히 홈으로 돌려보내면 주소를 잘못
+        // 안 것인지 튕겨 난 것인지 알 수 없으므로, 그대로 말하고 아래 링크로
+        // 걸어 나가게 둔다.
+        show("이 화면은 관리자만 볼 수 있습니다.", true);
+        return;
+      }
+
+      counted = countUsers();
+      load(0);
+    })
+    .catch(function () {
+      // 재발급이 거절되면 토큰이 이미 지워져 있다. 연결 실패와 그걸 가른다.
+      if (!localStorage.getItem("accessToken")) {
+        location.replace("login.html");
+        return;
+      }
+      show("서버에 연결할 수 없습니다.", true);
     });
 }
 

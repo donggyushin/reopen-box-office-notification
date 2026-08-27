@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>회원 목록</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 이 화면만 본문이 넓다. 나머지는 폼 한 줄에 맞춘 너비지만 여기는 다섯 칸짜리 표가 들어간다. -->
+<main class="wide">
+  <h1>회원 목록</h1>
+
+  <p id="message" role="status"></p>
+
+  <div id="users"></div>
+
+  <p id="pager"></p>
+
+  <p><a href="home.html">홈으로</a></p>
+</main>
+
+<script src="auth.js"></script>
+<script>
+setupUserList();
+</script>
+
+</body>
+</html>

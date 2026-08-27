@@ -100,6 +100,14 @@ td button {
   font-size: 12px;
 }
 
+#admin:empty {
+  display: none;
+}
+
+#pager:empty {
+  display: none;
+}
+
 .error {
   color: #c00;
 }
@@ -213,6 +221,63 @@ h2 {
   padding: 0 3px;
   margin-left: 4px;
   white-space: nowrap;
+}
+
+/* 회원 목록 화면. 관리자만 여는 자리라 이 화면의 표만 칸이 다섯이고, 그만큼
+   본문도 넓다 — 320px 은 폼 한 줄에 맞춘 너비다. */
+main.wide {
+  max-width: 600px;
+}
+
+.users {
+  margin: 0 0 12px;
+}
+
+.users caption {
+  text-align: left;
+  color: #666;
+  font-size: 13px;
+  padding: 0 0 6px;
+}
+
+/* th 의 기본 40% 는 이름/값 두 칸짜리 표의 몫이다. 여기서는 칸마다 폭을 정한다.
+   가로 여백도 마찬가지로, 두 칸짜리 표에서는 th 의 폭이 그 일을 하고 있었다. */
+.users th {
+  width: auto;
+  white-space: nowrap;
+}
+
+.users th,
+.users td {
+  padding-right: 10px;
+}
+
+.users .id,
+.users .day {
+  color: #666;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.users .id {
+  width: 30px;
+}
+
+.users .day {
+  width: 84px;
+}
+
+.users .state {
+  width: 76px;
+}
+
+/* 긴 주소가 표를 화면 밖으로 밀지 않게 한다. */
+.users .email {
+  word-break: break-all;
+}
+
+#pager button + button {
+  margin-left: 8px;
 }
 
 /* 여기서부터는 홈 화면 표의 값 칸에만 쓰는 것들이다. 나머지 화면은 계속
