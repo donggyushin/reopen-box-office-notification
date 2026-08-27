@@ -49,12 +49,13 @@ theme: an animation added anywhere else has no such warrant.
 
 ## Architecture
 
-Six pages plus one shared script:
+Seven pages plus one shared script:
 
 ```
 login.html          로그인      ─┐   ← /  (vercel.json rewrite)
 signup.html         회원가입    ─┴─→ auth.js → home.html
 home.html           로그인 후 화면
+sent.html           보낸 재개봉 알림 (home.html 에서 진입)
 users.html          회원 목록 (관리자 전용, home.html 에서 진입)
 verification.html   이메일 인증 (메일 링크로 진입)
 password.html       비밀번호 재설정 (login.html 에서 진입)
@@ -220,7 +221,63 @@ never arrived — a lone 다음 button under a failed request points at a page t
 there. When it is drawn both buttons stay, one of them disabled, so 다음 does not move
 under the cursor as 이전 appears.
 
-`main.wide` exists for this page only. 320px is a form's width; five columns need more.
+`main.wide` is shared with `sent.html`, the other screen whose table will not fit.
+320px is a form's width; five columns need more.
+
+**`sent.html` has no guard at all, and that is the honest reading of its data.**
+`GET /box-office/sent` takes no token, and what comes back is not anybody's personal
+information — it is the record of what this service has announced. So `setupSentAlerts()`
+uses bare `fetch`, checks no session, and never touches `localStorage` on any branch. It
+is `loadBoxOffice()`'s rule applied to a whole page: failing to draw a list must never end
+a session. Gating it on `hasSession()` would be exactly the mistake `users.html` already
+documents — a gate on the screen that the data does not have, which reads as protection
+and isn't. The link into it is plain markup in `home.html` for the same reason: it needs
+no answer and no permission, and drawing it from `setupHome()` would make it vanish on
+the days the box office call fails.
+
+**Three columns, and the rest of the response is dropped.** 발송일 / 제목 / 개봉일 —
+when we said it, what we said, and when that film first opened. A row arrives as the whole
+KOFIC daily shape plus `id` and `createdAt`, so most of it is thrown away, and the reason
+is one thing said twice: this page's question is *which films were announced*, not how
+they performed. `rank` and `audiCnt` are a snapshot of the send day, and the home chart is
+already where performance lives — printing 9위 here invites the reader to take it for
+today's. The deltas (`rankInten`, `salesChange`, `audiChange`, …) are differences against
+the day before an alert, which nothing on this page is asking about. `movieCd` and `id`
+are handles for going to ask the backend something, not things to read.
+
+`발송일` leads, and that placement is the argument. The list is ordered by send date, so
+putting that column first makes the order visible instead of asserted — which is why the
+caption no longer says 최근에 보낸 것부터 and only counts the rows. The two dates are also
+deliberately not adjacent: 제목 sits between them, because two date columns side by side
+are two chances to read the wrong one. They share the `.day` class on purpose — different
+styling would make them look like different kinds of value, and they are both just dates.
+
+There is no `재개봉` tag, for the opposite reason to everything above: on home it singles
+out one row in ten, and here every row is a reopening film, so marking them all marks
+nothing.
+
+**The order comes from `createdAt`, the same value the first column prints.**
+`orderedBySent()` sorts by it descending, newest first, for the same reason `users.html`
+asks for `order=desc`. Sorting by `id` would usually put the same rows in the same places,
+and that is precisely why it is the wrong field: a page that ranks by one value while
+printing another stays right until the two disagree, and then it is wrong with no sign on
+screen. If any row's `createdAt` will not parse, the server's order stands untouched — a
+guessed order is worse than an unknown one.
+
+`dayText()` is a top-level function rather than a local one because this column and
+`users.html`'s 가입일 are the same problem — an ISO string with a time nobody needs, where
+an unreadable value must pass through unchanged so a shape change stays visible on screen.
+Two copies of that rule would eventually disagree. It formats in local time, so an alert
+stamped `23:30Z` reads as the next day in Seoul, which is the day it actually arrived.
+
+**An empty list is the normal state, so it is written in words and kept distinct from a
+broken one.** The deployed backend answers `{"sentBoxOfficeList":[]}` today, so the empty
+screen is what most visitors meet first; it says nothing has been sent yet and when the
+list fills. A `200` whose body will not parse, or that carries no `sentBoxOfficeList` at
+all, is a different thing and gets the error line instead. This is the one place the page
+diverges from `loadBoxOffice()`, which folds both into 아직 없습니다 — there an empty day
+is ordinary, here an empty list is the first impression, and letting a malfunction wear
+it is worse.
 
 **`verification.html` is served from a path it does not live at.** The mail link is
 `/email/verification/<code>`; `vercel.json` rewrites that to `/verification.html`, and
@@ -336,6 +393,7 @@ branch, and a local backend must allow CORS from `http://localhost:8000`.
 | 비밀번호 변경 | `PATCH /users/password` `{ email, password }` | `200` |
 | 재개봉 알림 설정 | `PATCH /users/receive-reopen-box-office-notifications` (Bearer) `{ value }` | `200` |
 | 일별 박스오피스 | `GET /box-office/daily` (토큰 없음) | `200` `{ boxOfficeList: [{ rank, movieNm, openDt, audiCnt, salesShare, isReopen, ... }] }` |
+| 보낸 재개봉 알림 | `GET /box-office/sent` (토큰 없음) | `200` `{ sentBoxOfficeList: [{ id, createdAt, rank, movieNm, openDt, audiCnt, ... }] }` |
 | 회원 목록 | `GET /users?limit=&offset=&order=` (가드 없음) | `200` `[{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications }]` |
 | 회원 수 | `GET /users/count` (가드 없음) | `200` `{ totalUserCount }` |
 
@@ -353,6 +411,9 @@ not the service. The Railway URL in `API_BASE` is reachable.
 
 ## Known gaps
 
+- `GET /box-office/sent` is a beta endpoint with no query parameters, so the whole history
+  arrives in one response and `sent.html` does not page it. That is fine while the list is
+  short and will need revisiting when it isn't.
 - Refresh is pull-only: `ensureAccessToken()` renews on page load and before each
   `authorizedFetch()`, but nothing renews on a timer, so a tab left open past the 1h
   accessToken expiry only recovers on its next call.

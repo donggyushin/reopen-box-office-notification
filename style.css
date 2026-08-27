@@ -223,8 +223,8 @@ h2 {
   white-space: nowrap;
 }
 
-/* 회원 목록 화면. 관리자만 여는 자리라 이 화면의 표만 칸이 다섯이고, 그만큼
-   본문도 넓다 — 320px 은 폼 한 줄에 맞춘 너비다. */
+/* 회원 목록 화면. 이 화면의 표는 칸이 다섯이라 본문도 넓다 — 320px 은 폼 한 줄에
+   맞춘 너비다. main.wide 는 아래 .sent 화면과 함께 쓴다. */
 main.wide {
   max-width: 600px;
 }
@@ -374,4 +374,44 @@ main.wide {
     animation: none;
     stroke-dashoffset: 0;
   }
+}
+
+/* 보낸 재개봉 알림 화면. 발송일 · 제목 · 개봉일 세 칸이고, 날짜 두 칸이 168px 을
+   가져가므로 320px 안에서는 제목이 설 자리가 없다. 그래서 회원 목록과 본문 너비를
+   같이 쓴다. 두 날짜는 같은 .day 로 그린다 — 생김새가 다르면 다른 종류의 값처럼
+   보이는데, 둘 다 그냥 날짜다. */
+
+.sent {
+  margin: 0 0 12px;
+}
+
+.sent caption {
+  text-align: left;
+  color: #666;
+  font-size: 13px;
+  padding: 0 0 6px;
+}
+
+/* th 의 기본 40% 는 이름/값 두 칸짜리 표의 몫이다. 여기서는 날짜 칸만 폭을 정하고
+   제목이 남는 폭을 다 쓴다. */
+.sent th {
+  width: auto;
+  white-space: nowrap;
+}
+
+.sent th,
+.sent td {
+  padding-right: 10px;
+}
+
+.sent .day {
+  color: #666;
+  font-size: 12px;
+  white-space: nowrap;
+  width: 84px;
+}
+
+/* 긴 제목이 표를 화면 밖으로 밀지 않게 한다. */
+.sent .name {
+  word-break: break-all;
 }

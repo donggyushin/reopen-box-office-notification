@@ -6,6 +6,7 @@
 login.html          로그인 (첫 화면, `/`)
 signup.html         회원가입
 home.html           로그인 후 화면
+sent.html           보낸 재개봉 알림 (홈에서 진입)
 users.html          회원 목록 (관리자 전용, 홈에서 진입)
 verification.html   이메일 인증 (메일 링크로 진입)
 password.html       비밀번호 재설정 (코드 요청 → 인증 → 변경)
@@ -27,6 +28,42 @@ serve.py            로컬 확인용 정적 서버 (캐시 없음)
 보여주고, 토큰이 없거나 재발급까지 실패하면 `login.html`로 되돌립니다. 끝난 상태는 체크
 표시로, 아직인 상태는 글자로 적습니다 — 줄 이름이 이미 질문이라 "예"는 표시 하나면 되고,
 "아니오" 쪽에는 할 일이 남아 있어 말이 필요합니다.
+
+## 보낸 재개봉 알림
+
+홈의 박스오피스 순위 아래 "지금까지 보낸 재개봉 알림" 링크가 `sent.html`로 갑니다.
+`GET /box-office/sent`가 지금까지 알림을 보낸 재개봉 영화를 돌려주고, 화면은 발송일 ·
+제목 · 개봉일 세 칸으로 적습니다.
+
+이 화면에는 가드가 없습니다. 엔드포인트가 토큰을 보지 않고, 실리는 것도 남의 정보가
+아니라 우리가 무엇을 알렸는지에 대한 기록입니다. 그래서 맨 `fetch`로 부르고 어느
+갈래에서도 토큰을 건드리지 않습니다 — 목록을 못 그린 일이 세션을 끝내면 안 됩니다.
+
+응답에는 순위·관객수를 비롯한 박스오피스 값이 다 실려 오지만 화면에는 적지 않습니다.
+이 화면의 질문은 "무엇을 알렸나"이지 "그게 얼마나 걸렸나"가 아니고, 성적은 홈의 차트
+자리입니다. 여기에 9위를 적어 두면 오늘 것으로 읽힐 뿐이고, 증감값(`rankInten`,
+`audiChange` 등)은 알림 전날과 비교한 값이라 이 화면이 묻지 않는 것을 답합니다.
+
+**발송일이 첫 칸입니다.** 목록이 발송일 순으로 서 있으니 그 값을 맨 앞에 두면 순서가
+말이 아니라 눈으로 보입니다 — 그래서 표 위 한 줄에는 "최근에 보낸 것부터" 같은 말 없이
+편수만 적습니다. 두 날짜 사이에 제목을 끼운 것도 일부러입니다. 날짜 칸이 붙어 있으면
+엉뚱한 쪽을 읽기 쉽습니다.
+
+순서 기준은 `createdAt`, 곧 첫 칸에 적히는 그 값입니다. `id`로 세워도 결과는 대개 같겠지만
+그래서 더 `id`로 세우면 안 됩니다 — 적는 값과 줄을 세우는 값이 다르면 둘이 어긋나는 날에야
+티가 나고, 그날 화면은 이미 거짓말을 하고 있습니다. 읽을 수 없는 발송일이 하나라도 있으면
+서버가 준 순서를 그대로 둡니다 — 지어낸 순서보다 모르는 순서가 낫습니다.
+
+"재개봉" 표는 붙이지 않습니다 — 홈에서는 열 줄 중 한 줄을 가리키는 말이지만 여기서는
+모든 줄이 재개봉작이라 전부에 붙이면 아무것도 못 가리킵니다.
+
+날짜는 `dayText()`가 `YYYY-MM-DD`로 줄입니다. 회원 목록의 가입일과 같은 함수를 씁니다 —
+같은 규칙을 두 벌 두면 언젠가 어긋납니다. 로컬 시각 기준이라 `23:30Z`에 나간 알림은
+한국에서 받은 날짜인 다음 날로 적힙니다.
+
+베타 API라 쿼리 파라미터가 없어 전체가 한 번에 옵니다. 아직 한 편도 없으면 (지금 배포된
+백엔드가 그렇습니다) 없다고 적고 이 목록이 언제 채워지는지까지 알려 줍니다. 응답을 읽지
+못한 경우는 그것대로 따로 적습니다 — 없는 것과 못 읽은 것이 같아 보이면 안 됩니다.
 
 ## 회원 목록 (관리자)
 
@@ -115,6 +152,9 @@ var API_BASE = 로컬이면 "http://localhost:3000"
 | 재설정 코드 요청 | `POST /users/password/verification` `{ email }` | `201` |
 | 재설정 코드 인증 | `POST /users/verify/password` `{ email, code }` | `201` `{ success: true }` |
 | 비밀번호 변경 | `PATCH /users/password` `{ email, password }` | `200` |
+| 재개봉 알림 설정 | `PATCH /users/receive-reopen-box-office-notifications` (Bearer) `{ value }` | `200` |
+| 일별 박스오피스 | `GET /box-office/daily` (토큰 없음) | `200` `{ boxOfficeList: [{ rank, movieNm, openDt, audiCnt, isReopen, ... }] }` |
+| 보낸 재개봉 알림 | `GET /box-office/sent` (토큰 없음) | `200` `{ sentBoxOfficeList: [{ id, createdAt, rank, movieNm, openDt, audiCnt, ... }] }` |
 | 회원 목록 | `GET /users?limit=&offset=&order=` (가드 없음) | `200` `[{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications }]` |
 | 회원 수 | `GET /users/count` (가드 없음) | `200` `{ totalUserCount }` |
 
@@ -167,6 +207,8 @@ var API_BASE = 로컬이면 "http://localhost:3000"
 
 ## 알아둘 점
 
+- `GET /box-office/sent`는 쿼리 파라미터가 없는 베타 API라 전체가 한 번에 옵니다.
+  `sent.html`은 페이징하지 않으므로 목록이 길어지면 다시 봐야 합니다.
 - 토큰을 `localStorage`에 두므로 XSS가 생기면 그대로 노출됩니다. 다음 단계로 넘어갈 때
   httpOnly 쿠키를 고려해 보세요.
 - accessToken이 만료되면 `ensureAccessToken()`이 `refreshToken`으로 조용히 새로 받습니다.

@@ -367,6 +367,35 @@ function verificationEmailButton(show, onDead, successText) {
   return button;
 }
 
+// ISO 날짜를 YYYY-MM-DD 로 줄인다. 회원 목록의 가입일과 보낸 알림의 발송일이 같은
+// 규칙을 쓴다 — 둘 다 응답에는 시각까지 실려 오는데, 그대로 적으면 칸만 넓어지고
+// 읽을 것은 늘지 않는다. 두 화면이 날짜를 다르게 적으면 같은 값을 두 번 배우게
+// 되므로 한 벌만 둔다.
+//
+// 읽을 수 없는 값은 손대지 않고 그대로 적는다. 응답 형식이 바뀐 것을 화면만 보고도
+// 알아볼 수 있어야 한다.
+function dayText(value) {
+  function pad(n) {
+    return (n < 10 ? "0" : "") + n;
+  }
+
+  if (!value) {
+    return "";
+  }
+
+  var date = new Date(value);
+  if (isNaN(date.getTime())) {
+    return String(value);
+  }
+  return (
+    date.getFullYear() +
+    "-" +
+    pad(date.getMonth() + 1) +
+    "-" +
+    pad(date.getDate())
+  );
+}
+
 // 켜진 상태를 나타내는 체크 표시. 표의 값 칸에서 "완료", "받는 중" 같은 말을
 // 대신한다 — 줄 이름이 이미 무엇에 대한 답인지 말하고 있어서 값 칸에는 예/아니오만
 // 있으면 되고, 글자보다 표시가 한눈에 들어온다. 그림만 남으므로 읽어 주는 도구에는
@@ -811,6 +840,173 @@ function setupHome() {
     });
 }
 
+// 지금까지 재개봉 알림을 보낸 영화 목록을 그린다.
+// sent.html 이 message/sent 요소를 선언하고 이 함수를 호출한다.
+//
+// 이 화면은 loadBoxOffice() 쪽에 선다. GET /box-office/sent 는 토큰을 보지 않는
+// 공개 자료라 맨 fetch 로 부르고, 그래서 세션 가드도 두지 않는다 — 여기 실리는
+// 것은 남의 개인정보가 아니라 우리가 무엇을 알렸는지에 대한 기록이고, 데이터를
+// 막지 못하는 가드는 지키는 시늉만 한다(README 의 "알아둘 점"). 어느 갈래에서도
+// 토큰은 건드리지 않는다 — 기록을 못 그린 일이 세션을 끝내면 안 된다.
+function setupSentAlerts() {
+  var PATH = "/box-office/sent";
+
+  var message = document.getElementById("message");
+  var sent = document.getElementById("sent");
+
+  function show(text, isError) {
+    message.textContent = text;
+    message.className = isError ? "error" : "ok";
+  }
+
+  function element(name, className, text) {
+    var node = document.createElement(name);
+    if (className) {
+      node.className = className;
+    }
+    if (text) {
+      node.textContent = text;
+    }
+    return node;
+  }
+
+  function headCell(row, label, className) {
+    row.appendChild(element("th", className, label));
+  }
+
+  // 최근에 보낸 것부터 세운다 — 이 화면을 여는 이유는 대개 "요즘 뭘 알려 줬나"라서
+  // 회원 목록과 같은 쪽을 첫 줄에 둔다. 기준은 첫 칸에 적히는 그 값, createdAt 이다.
+  // id 로 세워도 결과는 대개 같겠지만, 그래서 더 id 로 세우면 안 된다 — 적는 값과
+  // 줄을 세우는 값이 다르면 둘이 어긋나는 날에야 티가 나고, 그날 화면은 거짓말을
+  // 하고 있다.
+  //
+  // 읽을 수 없는 발송일이 하나라도 있으면 서버가 준 순서를 그대로 둔다. 지어낸
+  // 순서보다 모르는 순서가 낫다.
+  function orderedBySent(rows) {
+    var readable = rows.every(function (movie) {
+      return (
+        movie &&
+        movie.createdAt &&
+        !isNaN(new Date(movie.createdAt).getTime())
+      );
+    });
+
+    if (!readable) {
+      return rows;
+    }
+    return rows.slice().sort(function (a, b) {
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+  }
+
+  function buildTable(rows) {
+    var table = element("table", "sent");
+
+    // 몇 편인지만 적는다. 어느 쪽부터 서 있는지는 쓰지 않는다 — 발송일이 첫 칸에
+    // 그대로 있어서 줄 순서는 보면 안다. 눈에 보이는 것을 글로 한 번 더 말할
+    // 이유가 없다.
+    table.appendChild(element("caption", null, "전체 " + rows.length + "편"));
+
+    // 줄은 thead/tbody 에 직접 넣는다. table.insertRow() 는 이미 있는 마지막 tr 의
+    // 부모에 붙는 규칙이라, 머리줄을 먼저 만들면 본문 줄까지 thead 안으로 들어간다.
+    var head = table.createTHead().insertRow();
+    headCell(head, "발송일", "day");
+    headCell(head, "제목", "name");
+    headCell(head, "개봉일", "day");
+
+    var body = table.createTBody();
+    rows.forEach(function (movie) {
+      var row = body.insertRow();
+
+      // 이 목록이 이 순서로 서 있는 이유가 이 칸이라 맨 앞에 둔다. 줄 순서를
+      // 표 위에서 말로 주장하는 대신 값으로 보이게 하는 자리다.
+      var sentDay = row.insertCell();
+      sentDay.className = "day";
+      sentDay.textContent = dayText(movie.createdAt);
+
+      // 제목에 "재개봉" 표는 붙이지 않는다. 홈의 표에서 그 표는 열 줄 중 한 줄을
+      // 가리키는 말이었는데, 이 목록은 모든 줄이 재개봉작이라 전부에 붙이면
+      // 아무것도 가리키지 못한다.
+      var name = row.insertCell();
+      name.className = "name";
+      name.textContent = movie.movieNm || "제목 없음";
+
+      // 재개봉작의 개봉일은 처음 걸렸던 날이다. 두 날짜를 붙여 놓으면 서로
+      // 헷갈리므로 제목을 사이에 두고 반대쪽 끝에 앉힌다.
+      var day = row.insertCell();
+      day.className = "day";
+      day.textContent = movie.openDt || "";
+    });
+
+    return table;
+  }
+
+  // 한 편도 없는 것은 고장이 아니라 아직 보낼 일이 없었다는 뜻이다. 배포된
+  // 백엔드가 지금 그 상태라 이 화면이 첫인상이 되는데, 빈 자리만 남으면 못
+  // 불러온 것과 구별되지 않는다. 그래서 언제 채워지는지까지 적는다.
+  function drawEmpty() {
+    sent.textContent = "";
+    sent.appendChild(element("p", null, "아직 보낸 재개봉 알림이 없습니다."));
+    sent.appendChild(
+      element(
+        "p",
+        null,
+        "재개봉 영화가 일별 박스오피스 순위에 오르면 알림을 보내고, 그 기록이 여기 쌓입니다."
+      )
+    );
+  }
+
+  show("보낸 알림을 불러오는 중...", false);
+
+  fetch(API_BASE + PATH)
+    .then(function (response) {
+      return response.text().then(function (body) {
+        return { ok: response.ok, status: response.status, body: body };
+      });
+    })
+    .then(function (result) {
+      if (!result.ok) {
+        show(messageFrom(result.body, result.status), true);
+        return;
+      }
+
+      var data = null;
+      try {
+        data = JSON.parse(result.body);
+      } catch (e) {
+        data = null;
+      }
+
+      // 200 인데 목록이 없는 것은 한 편도 없다는 뜻이 아니라 답을 못 읽었다는
+      // 뜻이다. 이 화면에서 빈 목록은 흔한 상태라 — 지금 배포된 백엔드가 그렇다 —
+      // 둘을 같은 말로 적으면 고장이 평상시처럼 보인다. loadBoxOffice() 는 여기서
+      // 갈래를 나누지 않는데, 그쪽의 빈 목록은 하루에 한 번쯤 있는 일이고 이쪽은
+      // 첫 화면이라 값이 다르다.
+      var rows =
+        data && Array.isArray(data.sentBoxOfficeList)
+          ? data.sentBoxOfficeList
+          : null;
+
+      if (!rows) {
+        show("보낸 알림을 읽지 못했습니다. 응답 형식이 바뀌었을 수 있습니다.", true);
+        return;
+      }
+
+      show("", false);
+
+      if (!rows.length) {
+        drawEmpty();
+        return;
+      }
+
+      sent.textContent = "";
+      sent.appendChild(buildTable(orderedBySent(rows)));
+    })
+    .catch(function () {
+      show("보낸 알림을 불러오지 못했습니다. 서버에 연결할 수 없습니다.", true);
+    });
+}
+
 // 회원 목록 화면을 API에 연결한다.
 // users.html이 message/users/pager 요소를 선언하고 이 함수를 호출한다.
 //
@@ -875,31 +1071,6 @@ function setupUserList() {
       node.textContent = text;
     }
     return node;
-  }
-
-  function pad(value) {
-    return (value < 10 ? "0" : "") + value;
-  }
-
-  // 가입일. ISO 문자열을 그대로 적으면 시각까지 딸려 와 칸이 넓어지므로 날짜만
-  // 남긴다. 읽을 수 없는 값은 손대지 않고 그대로 적는다 — 응답 형식이 바뀐 것을
-  // 화면만 보고도 알아볼 수 있어야 한다.
-  function dayText(value) {
-    if (!value) {
-      return "";
-    }
-
-    var date = new Date(value);
-    if (isNaN(date.getTime())) {
-      return String(value);
-    }
-    return (
-      date.getFullYear() +
-      "-" +
-      pad(date.getMonth() + 1) +
-      "-" +
-      pad(date.getDate())
-    );
   }
 
   function headCell(row, label, className) {
