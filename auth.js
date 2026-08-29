@@ -417,100 +417,260 @@ function checkMark(label, animated) {
   return svg;
 }
 
-// 재개봉 알림을 켠다. 홈이 표를 그리다가 "이메일 인증은 끝났는데 알림은 꺼져
-// 있는" 사람을 만나면 바로 부른다 — 물어보지 않는다. 알림을 받으러 가입한
-// 사람에게 "받으시겠습니까"는 한 번 더 누르게 만드는 절차일 뿐이다.
-// 값 칸을 통째로 맡아 끝날 때까지 그 자리에서 진행 상태를 보여준다.
-// show(text, isError)로 실패를 알리고, 세션이 끝났으면 onDead()를 부른다.
-function enableReopenNotifications(cell, show, onDead) {
-  var PATH = "/users/receive-reopen-box-office-notifications";
+// 알림 한 줄의 값 칸을 맡는다. 지금 상태를 적고, 그 상태를 뒤집는 버튼을 그 옆에
+// 둔다 — 위의 이메일 인증 줄이 이미 "상태 + 할 일" 모양이라, 알림 줄도 같은 모양이면
+// 표 전체가 한 가지 말투로 읽힌다. 값 칸을 통째로 갈아 끼우지 않고 상태 자리와 버튼을
+// 따로 들고 있는 이유는 하나다 — 버튼을 다시 만들면 방금 그것을 누른 손가락은
+// 괜찮아도 키보드는 초점을 잃는다.
+//
+// 조건은 켜는 쪽에만 있다. 인증하지 않은 주소로 알림을 켜면 보낼 곳이 없으므로
+// 처음부터 꺼져 있는 줄에는 버튼을 그리지 않는다 — 그 사람의 다음 할 일은 위 줄에
+// 있다. 하지만 이미 켜져 있던 줄에는 인증 여부와 상관없이 버튼이 선다. 끄는 일이
+// 위험한 적은 없고, 한 번 끄면 되돌릴 수 없는 스위치는 스위치가 아니다.
+//
+// options: { name, path, on, canTurnOn, detail, show, onDead }
+function notificationSwitch(cell, options) {
+  var name = options.name;
+  var on = !!options.on;
+  var show = options.show;
 
-  // 서버가 아무리 빨리 답해도 이만큼은 진행 표시를 띄운 채로 둔다.
-  // 누른 적도 없는 값이 소리 없이 바뀌면 무슨 일이 있었는지 알 수 없다.
-  var MIN_PENDING_MS = 2500;
+  var state = document.createElement("span");
+  cell.textContent = "";
+  cell.appendChild(state);
 
-  function element(name, className, text) {
-    var node = document.createElement(name);
-    if (className) {
-      node.className = className;
+  var control = null;
+  if (on || options.canTurnOn) {
+    control = document.createElement("button");
+    control.type = "button";
+    control.addEventListener("click", flip);
+    cell.appendChild(control);
+  }
+
+  // animated 는 방금 눌러서 켜진 자리에만 준다. 새로고침으로 이미 켜져 있던 값이
+  // 선을 그리며 나타나면 지금 막 그렇게 된 것처럼 보여서 거짓말이 된다.
+  function draw(animated) {
+    state.textContent = "";
+    if (on) {
+      state.appendChild(checkMark("받는 중", animated));
+    } else {
+      state.textContent = "받지 않음";
     }
-    if (text) {
-      node.textContent = text;
+
+    if (control) {
+      control.textContent = on ? "끄기" : "받기";
+      control.disabled = false;
     }
+  }
+
+  function flip() {
+    var next = !on;
+
+    control.disabled = true;
+    show(name + "을 " + (next ? "켜는" : "끄는") + " 중...", false);
+
+    authorizedFetch(options.path, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: next })
+    })
+      .then(function (response) {
+        return response.text().then(function (body) {
+          return { ok: response.ok, status: response.status, body: body };
+        });
+      })
+      .then(function (result) {
+        if (result.status === 401) {
+          options.onDead();
+          return;
+        }
+
+        if (!result.ok) {
+          // 바뀐 것이 없으니 값 칸은 그대로 두고 버튼만 되살린다.
+          control.disabled = false;
+          show(messageFrom(result.body, result.status), true);
+          return;
+        }
+
+        on = next;
+        draw(next);
+
+        var text = name + (next ? "을 켰습니다." : "을 껐습니다.");
+        if (next && options.detail) {
+          text += " " + options.detail;
+        }
+        show(text, false);
+      })
+      .catch(function () {
+        // 재발급이 거절되면 토큰이 이미 지워져 있다. 연결 실패와 그걸 가른다.
+        if (!localStorage.getItem("accessToken")) {
+          options.onDead();
+          return;
+        }
+        control.disabled = false;
+        show("서버에 연결할 수 없습니다.", true);
+      });
+  }
+
+  draw(false);
+}
+
+// 알림 위치. 비 예보는 이 좌표로 날씨를 보고, 좌표가 없으면 서울을 본다 — 그래서
+// 값 칸은 비워 두는 대신 "서울 (기본)"이라고 적는다. 정하지 않았다는 말과 그때 실제로
+// 무슨 일이 일어나는지는 같은 자리에 있어야 한다.
+//
+// 좌표를 손으로 적게 하지 않는다. 자기 위도와 경도를 아는 사람은 없고 브라우저는 이미
+// 답을 갖고 있으니, 이 줄의 컨트롤은 입력칸이 아니라 버튼이다. 허락을 묻는 창도
+// 브라우저가 띄우므로 이 화면에는 "쓰시겠습니까"를 두지 않는다.
+//
+// 이 줄에는 인증 조건이 없다. 좌표는 주소로 보내는 것이 아니라 어디를 볼지를 정하는
+// 값이라, 인증 전에 미리 맞춰 둬도 가리키는 곳이 없어지지 않는다.
+function coordinateRow(cell, me, show, onDead) {
+  var PATH = "/users/coordinate";
+
+  // 소수점 넷째 자리면 10m 안쪽이다. 날씨를 보는 데 그보다 정밀할 이유가 없고,
+  // 보내는 값과 화면에 적는 값을 같은 자리에서 끊어 두면 둘이 어긋나지 않는다.
+  var PLACES = 4;
+
+  var latitude = null;
+  var longitude = null;
+
+  // 서버가 문자열로 주든 숫자로 주든 같게 받는다. 읽을 수 없는 값은 없는 것으로 친다 —
+  // 좌표가 아닌 것을 좌표라고 적는 것보다 서울을 본다고 적는 편이 사실에 가깝다.
+  function number(value) {
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+    var parsed = Number(value);
+    return isNaN(parsed) ? null : parsed;
+  }
+
+  function has() {
+    return latitude !== null && longitude !== null;
+  }
+
+  function button(text, onClick) {
+    var node = document.createElement("button");
+    node.type = "button";
+    node.textContent = text;
+    node.addEventListener("click", function () {
+      onClick(node);
+    });
     return node;
   }
 
-  // 여기서만 체크 표시가 선을 그리며 나타난다. 이 화면에서 유일하게 움직이는
-  // 자리이고, 새로고침으로 그려지는 같은 표시와 다른 점도 그것뿐이다.
-  function showDone() {
-    cell.textContent = "";
-    cell.appendChild(checkMark("받는 중", true));
-  }
-
-  // 켜지 못했으면 표는 사실대로 꺼진 상태를 보여준다.
-  // 다시 시도할 길은 새로고침이다 — 이 화면에는 누를 것을 두지 않는다.
-  function showOff() {
-    cell.textContent = "받지 않음";
-  }
-
-  function wait(ms) {
-    return new Promise(function (resolve) {
-      setTimeout(resolve, ms);
-    });
-  }
+  var state = document.createElement("span");
+  var use = button("현재 위치 사용", locate);
+  var erase = button("지우기", clear);
 
   cell.textContent = "";
-  cell.appendChild(element("span", "progress"));
-  cell.appendChild(element("span", "pending", "켜는 중"));
+  cell.appendChild(state);
+  cell.appendChild(use);
 
-  // 요청이 거절되어도 Promise.all이 먼저 깨지지 않도록 결과를 값으로 눕힌다.
-  // 그래야 성공이든 실패든 최소 대기 시간이 똑같이 지켜진다.
-  var settled = authorizedFetch(PATH, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ value: true })
-  })
-    .then(function (response) {
-      return response.text().then(function (body) {
-        return {
-          result: { ok: response.ok, status: response.status, body: body }
-        };
-      });
+  function draw() {
+    state.textContent = has()
+      ? latitude.toFixed(PLACES) + ", " + longitude.toFixed(PLACES)
+      : "서울 (기본)";
+
+    use.disabled = false;
+    erase.disabled = false;
+
+    // 지울 것이 없으면 지우기도 없다. 이 버튼만은 붙였다 뗐다 하는데, 좌표가 없는
+    // 줄에 놓인 지우기는 눌러도 아무 일이 없는 버튼이기 때문이다.
+    if (has() && !erase.parentNode) {
+      cell.appendChild(erase);
+    } else if (!has() && erase.parentNode) {
+      cell.removeChild(erase);
+    }
+  }
+
+  function locate(node) {
+    if (!navigator.geolocation) {
+      show("이 브라우저는 위치를 알려 주지 않습니다.", true);
+      return;
+    }
+
+    node.disabled = true;
+    show("위치를 확인하는 중...", false);
+
+    navigator.geolocation.getCurrentPosition(
+      function (position) {
+        send(
+          {
+            latitude: Number(position.coords.latitude.toFixed(PLACES)),
+            longitude: Number(position.coords.longitude.toFixed(PLACES))
+          },
+          node,
+          "알림 위치를 지금 있는 곳으로 맞췄습니다."
+        );
+      },
+      function (error) {
+        node.disabled = false;
+        // 거부는 이 화면에서 되돌릴 수 없다. 다음 걸음이 브라우저 설정에만 있으니
+        // 그것만 적는다. 나머지 실패는 다시 눌러 보는 것 말고 할 일이 없다.
+        show(
+          error && error.code === 1
+            ? "위치 사용이 거부되었습니다. 브라우저 설정에서 이 사이트의 위치 사용을 허용해 주세요."
+            : "위치를 확인할 수 없습니다.",
+          true
+        );
+      },
+      { timeout: 10000, maximumAge: 0 }
+    );
+  }
+
+  function clear(node) {
+    node.disabled = true;
+    show("알림 위치를 지우는 중...", false);
+    send(
+      { latitude: null, longitude: null },
+      node,
+      "알림 위치를 지웠습니다. 서울을 기준으로 확인합니다."
+    );
+  }
+
+  function send(next, node, doneText) {
+    authorizedFetch(PATH, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(next)
     })
-    .catch(function (error) {
-      return { failed: error };
-    });
+      .then(function (response) {
+        return response.text().then(function (body) {
+          return { ok: response.ok, status: response.status, body: body };
+        });
+      })
+      .then(function (result) {
+        if (result.status === 401) {
+          onDead();
+          return;
+        }
 
-  Promise.all([settled, wait(MIN_PENDING_MS)]).then(function (values) {
-    var outcome = values[0];
+        if (!result.ok) {
+          // 바뀐 것이 없으니 값 칸은 그대로 두고 버튼만 되살린다.
+          node.disabled = false;
+          show(messageFrom(result.body, result.status), true);
+          return;
+        }
 
-    if (outcome.failed) {
-      // 재발급이 거절되면 토큰이 이미 지워져 있다. 연결 실패와 그걸 가른다.
-      if (!localStorage.getItem("accessToken")) {
-        onDead();
-        return;
-      }
-      showOff();
-      show("재개봉 알림을 켜지 못했습니다. 서버에 연결할 수 없습니다.", true);
-      return;
-    }
+        latitude = next.latitude;
+        longitude = next.longitude;
+        draw();
+        show(doneText, false);
+      })
+      .catch(function () {
+        // 재발급이 거절되면 토큰이 이미 지워져 있다. 연결 실패와 그걸 가른다.
+        if (!localStorage.getItem("accessToken")) {
+          onDead();
+          return;
+        }
+        node.disabled = false;
+        show("서버에 연결할 수 없습니다.", true);
+      });
+  }
 
-    var result = outcome.result;
-
-    if (result.status === 401) {
-      onDead();
-      return;
-    }
-
-    if (!result.ok) {
-      showOff();
-      show(messageFrom(result.body, result.status), true);
-      return;
-    }
-
-    showDone();
-    show("재개봉 알림을 켰습니다.", false);
-  });
+  latitude = number(me.latitude);
+  longitude = number(me.longitude);
+  draw();
 }
 
 // 일별 박스오피스 순위를 홈에 그린다. chart 는 표가 들어갈 자리이고, highlight 는
@@ -770,19 +930,31 @@ function setupHome() {
         )
       );
     }
-    var notifyCell = addRow(
-      table,
-      "재개봉 알림",
-      me.receiveReopenBoxOfficeNotifications ? "" : "받지 않음"
-    );
-    if (me.receiveReopenBoxOfficeNotifications) {
-      // 이미 켜져 있던 값이다. 같은 표시를 그리되 움직이지는 않는다.
-      notifyCell.appendChild(checkMark("받는 중", false));
-    } else if (me.isEmailVerified) {
-      // 인증을 마쳤는데 알림이 꺼져 있으면 그 자리에서 켠다. 인증 전이라면
-      // 켜 봐야 보낼 곳이 없으니, 그 사람의 다음 할 일은 위 줄에 있다.
-      enableReopenNotifications(notifyCell, show, toLogin);
+    // 알림 줄은 둘 다 같은 스위치다. 다른 것은 엔드포인트와 켠 뒤에 덧붙일 말뿐이라,
+    // 줄을 만드는 일과 스위치를 다는 일을 한자리에서 한다.
+    function addSwitch(label, options) {
+      options.name = label;
+      options.canTurnOn = me.isEmailVerified;
+      options.show = show;
+      options.onDead = toLogin;
+      notificationSwitch(addRow(table, label), options);
     }
+
+    addSwitch("재개봉 알림", {
+      path: "/users/receive-reopen-box-office-notifications",
+      on: me.receiveReopenBoxOfficeNotifications
+    });
+
+    addSwitch("비 예보 알림", {
+      path: "/users/receive-tomorrow-rain",
+      on: me.receiveTomorrowRainNotifications,
+      detail: "비가 오는 날 하루 전에 메일로 알려 드립니다."
+    });
+
+    // 바로 위 줄이 어디를 볼지 정하는 값이라 그 아래에 둔다. 비 예보를 끄고 있는
+    // 사람에게도 그린다 — 켜고 끌 때마다 표의 줄 수가 바뀌면, 방금 누른 버튼이
+    // 눈앞에서 자리를 옮긴다.
+    coordinateRow(addRow(table, "알림 위치"), me, show, toLogin);
 
     profile.textContent = "";
     profile.appendChild(table);

@@ -106,56 +106,88 @@ only way to call an authenticated endpoint; `setupHome()` is its one caller toda
 
 `setupHome()` follows the same DOM contract as `setupCredentialForm()`: `home.html`
 declares `reopen`, `greeting`, `profile`, `message`, `chart`, `admin`, and `logout`, and the
-page's whole script is one `setupHome()` call. The profile table is built in JS, not markup, because one row
-carries a control: when `isEmailVerified` is false the "이메일 인증" cell also gets a
-resend button that POSTs to `/users/email/verification`.
+page's whole script is one `setupHome()` call. The profile table is built in JS, not markup,
+because every row but the first carries a control — a resend button, two switches, and a
+pair of location buttons.
 
-**The table shows two rows, not the whole `/users/me` response.** Only 이메일 인증 and
-재개봉 알림 are there — the states this person can still do something about. `id`,
-`name`, `createdAt`, and `isAdmin` come back from the API and are deliberately dropped,
-and `email` already appears in the greeting above. `isAdmin` is dropped from the table but
-not thrown away: it is what puts the `회원 목록` link in `#admin`, which is the only way in
-to `users.html`. A row would say what this account is; a link says where it can go, and
-that is the only thing this person can do with the fact. Adding a field to the response should
-not add a row by default. The 재개봉 알림 row is not a control at all: when
-`isEmailVerified` is true and `receiveReopenBoxOfficeNotifications` is false, drawing the
-row fires the PATCH itself. Both conditions matter — turning notifications on before the
-address is verified points them at nowhere, so an unverified visitor's next step is the
-row above. Verification finishes in the mail link, not on this page, so the success message tells the user to reload — the page
-has no way to observe the result on its own. It paints the JWT email immediately so the page is never blank,
-then overwrites it with the `/users/me` response — the token is display-only scaffolding,
-the API answer is the truth. Its three failure paths are deliberately different: a 401
-that survived the retry clears tokens and redirects, a non-ok response shows the server's
-message and stays put, and a rejected `fetch` shows a connection error without touching
-the session.
+**The table shows four rows, not the whole `/users/me` response.** 이메일 인증, 재개봉 알림,
+비 예보 알림, 알림 위치 — the states this person can still do something about. `id`, `name`,
+and `createdAt` come back from the API and are deliberately dropped, and `email` already
+appears in the greeting above. `isAdmin` is dropped from the table but not thrown away: it is
+what puts the `회원 목록` link in `#admin`, which is the only way in to `users.html`. A row
+would say what this account is; a link says where it can go, and that is the only thing this
+person can do with the fact. Adding a field to the response should not add a row by default.
+`setupHome()` paints the JWT email immediately so the page is never blank, then overwrites it
+with the `/users/me` response — the token is display-only scaffolding, the API answer is the
+truth. Its three failure paths are deliberately different: a 401 that survived the retry
+clears tokens and redirects, a non-ok response shows the server's message and stays put, and
+a rejected `fetch` shows a connection error without touching the session.
 
-**A settled row is a check mark, not a word.** Both rows write their true state as the
-drawn `checkMark()` and their false state as text — `미완료`, `받지 않음`. The asymmetry is
-the point: the row label already asks the question, so a yes needs only a mark, while a no
-still has work attached to it and one of those cells carries the resend button. The mark
-replaces the word rather than joining it, so `aria-label` carries what was dropped.
+**The two alert rows are one function, `notificationSwitch()`.** They differ only in endpoint
+and in the sentence `#message` gets afterwards, so `addSwitch()` inside `showProfile()` builds
+the row and hands its value cell over. Each row is a state plus a button that flips it — the
+shape the 이메일 인증 row above already had. A third alert is another `addSwitch()` call, not
+a third copy of the request.
 
-`checkMark(label, animated)` is shared by `setupHome()` and `enableReopenNotifications()`,
-and `animated` is the only difference between them. The draw animation lives on
-`.check.drawn`, never on `.check`, because a value that was already true when the page
-loaded must not animate — a check that draws itself says "this just happened", and on a
-reload that is a lie. Only the row that genuinely just flipped gets it.
+The switch keeps a `<span>` for the state and a `<button>`, and redraws *into* them instead of
+rebuilding the cell. That is not tidiness: taking a button out of the DOM to put an identical
+one back drops keyboard focus, and the button just pressed is exactly where focus should stay.
 
-**`enableReopenNotifications()` asks nobody, and stalls on purpose.** Someone who signed
-up for reopening alerts has already answered the question a confirm button would ask, so
-the page does not ask it again — it PATCHes
-`/users/receive-reopen-box-office-notifications` with `{ value: true }` as soon as the
-row is drawn. Because nothing was clicked, the change has to be visible on its own: the
-function takes over the value cell with a sweeping progress bar for a floor of 2500ms —
-`MIN_PENDING_MS` — even when the server answers instantly, then settles into a drawn
-checkmark and a line in `#message`. Do not shorten the floor to match the
-server; a value that flips the instant the page loads reads as markup, not as something
-that just happened. The floor is enforced by
-`Promise.all([settled, wait(MIN_PENDING_MS)])`, where `settled` resolves to `{result}` or
-`{failed}` rather than rejecting — a rejection would break `Promise.all` early and let
-the failure path skip the wait. Failure leaves the cell reading "받지 않음" with the
-reason in `#message` and offers no retry control: the next attempt is a reload, and this
-row is not a place to press things.
+**Only the on direction is gated.** A row that is off and unverified gets no button at all —
+turning alerts on before the address is verified points them at nowhere, and that person's
+next step is the row above. A row already on always gets its 끄기, verified or not: off is
+never the unsafe direction, and a switch that cannot move back is not a switch. The button is
+created once from `on || canTurnOn`, so someone who was on and unverified can turn it back on
+too — undoing a click they may not have meant is worth more than the rule's last inch.
+
+Verification finishes in the mail link, not on this page, so the resend button's success
+message tells the user to reload — the page cannot observe the result on its own.
+
+**A settled row is a check mark, not a word.** The three boolean rows write their true state
+as `checkMark()` and their false state as text — `미완료`, `받지 않음`. The asymmetry is the
+point: the row label already asks the question, so a yes needs only a mark, while a no still
+has work attached to it. The mark replaces the word rather than joining it, so `aria-label`
+carries what was dropped. 알림 위치 gets neither, because it is not a yes/no — it prints its
+coordinates, or `서울 (기본)`.
+
+`checkMark(label, animated)` is shared by `setupHome()`, `notificationSwitch()`, and
+`setupUserList()`, and `animated` is the only difference between them. The draw animation
+lives on `.check.drawn`, never on `.check`, because a value that was already true when the
+page loaded must not animate — a check that draws itself says "this just happened", and on a
+reload that is a lie. Only a row that flipped under the visitor's own click gets it.
+
+**A pressed switch needs no waiting theatre.** This page used to turn 재개봉 알림 on by itself
+as the row was drawn, and held a sweeping progress bar for a 2500ms floor so that a value
+nobody had touched could not change in silence. That floor existed *because* nothing had been
+clicked. Once there is a button, the click is its own acknowledgement: the switch disables it,
+writes 켜는 중... to `#message`, and settles the moment the server answers. The auto-PATCH had
+to go for a second reason as well — while it ran, 끄기 was a lie, since the next reload turned
+the alert straight back on. Do not reintroduce either the auto-enable or the floor; `.progress`
+and `.pending` were deleted from `style.css` with them.
+
+Failure leaves a switch showing the state the server still holds, the reason in `#message`,
+and the button live again. There is no separate retry control — the button that failed is it.
+
+**`coordinateRow()` decides where the rain gets checked, and says so when it is unset.**
+`PATCH /users/coordinate` takes `{ latitude, longitude }`, both nullable, and the backend
+falls back to Seoul when they are null. So the empty state is written as `서울 (기본)` rather
+than left blank: "not set" and what actually happens then belong in the same cell. The row
+sits directly under 비 예보 알림, and is drawn even when that alert is off — a table whose row
+count changes as you flip a switch moves the button you just pressed out from under the
+cursor.
+
+Nobody knows their own latitude, so this row has no input field. `navigator.geolocation`
+already holds the answer and the browser asks its own permission, which is why the page adds
+no confirm step in front of it. Coordinates are cut to four decimal places — about 10m, far
+finer than a weather lookup needs — and cut in exactly one place, so the value sent and the
+value printed cannot drift apart. A value that will not parse is read as absent: printing
+서울 (기본) is nearer the truth than printing a non-coordinate as one. A denied permission is
+the only failure that names a next step (browser settings); the rest say the location could
+not be read, because pressing again is all there is to do. 지우기 is drawn only when there is
+something to erase.
+
+This row has no verification gate. A coordinate is not a message sent to an address — it is
+where to look — so setting it before verifying cannot point at nowhere.
 
 **`loadBoxOffice()` is the only call on this page that carries no token.**
 `GET /box-office/daily` is public, so it uses bare `fetch` rather than `authorizedFetch()`
@@ -386,15 +418,17 @@ branch, and a local backend must allow CORS from `http://localhost:8000`.
 | 로그인 | `POST /users/login` `{ email, password }` | `201` `{ accessToken, refreshToken }` |
 | 이메일 인증 | `POST /users/verify/email` (Bearer) `{ email, code }` | `201` `{ success: true }` |
 | 토큰 재발급 | `POST /auth/refresh-token` `{ refreshToken }` | `201` `{ accessToken, refreshToken }` |
-| 내 정보 | `GET /users/me` (Bearer) | `200` `{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications }` |
+| 내 정보 | `GET /users/me` (Bearer) | `200` `{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications, receiveTomorrowRainNotifications, latitude, longitude }` |
 | 인증 메일 재발송 | `POST /users/email/verification` (Bearer, 바디 없음) | `201` |
 | 재설정 코드 요청 | `POST /users/password/verification` `{ email }` | `201` |
 | 재설정 코드 인증 | `POST /users/verify/password` `{ email, code }` | `201` `{ success: true }` |
 | 비밀번호 변경 | `PATCH /users/password` `{ email, password }` | `200` |
 | 재개봉 알림 설정 | `PATCH /users/receive-reopen-box-office-notifications` (Bearer) `{ value }` | `200` |
+| 비 예보 알림 설정 | `PATCH /users/receive-tomorrow-rain` (Bearer) `{ value }` | `200` |
+| 알림 위치 설정 | `PATCH /users/coordinate` (Bearer) `{ latitude, longitude }` | `200` |
 | 일별 박스오피스 | `GET /box-office/daily` (토큰 없음) | `200` `{ boxOfficeList: [{ rank, movieNm, openDt, audiCnt, salesShare, isReopen, ... }] }` |
 | 보낸 재개봉 알림 | `GET /box-office/sent` (토큰 없음) | `200` `{ sentBoxOfficeList: [{ id, createdAt, rank, movieNm, openDt, audiCnt, ... }] }` |
-| 회원 목록 | `GET /users?limit=&offset=&order=` (가드 없음) | `200` `[{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications }]` |
+| 회원 목록 | `GET /users?limit=&offset=&order=` (가드 없음) | `200` `[{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications, receiveTomorrowRainNotifications, latitude, longitude }]` |
 | 회원 수 | `GET /users/count` (가드 없음) | `200` `{ totalUserCount }` |
 
 `GET /users` 는 배열을 그대로 돌려준다 — 총원도 다음 페이지 여부도 본문에 없어서
@@ -422,6 +456,11 @@ not the service. The Railway URL in `API_BASE` is reachable.
   readable by anyone. `users.html` gates itself on `isAdmin`, but that gate lives entirely
   in the browser; it decides who sees the screen, not who can read the data. Moving it to
   the server is the fix, and until then do not describe the page as protecting anything.
+- **That unguarded list now carries `latitude`/`longitude` as well.** Adding 알림 위치 changed
+  what the hole above is worth: it used to leak where to mail someone, and now it leaks where
+  they live. The fix is on the backend — drop the coordinates from the `GET /users` response,
+  or guard the endpoint — and there is nothing `users.html` or any other page can do about it.
+  `users.html` does not print the columns, which is not protection, only restraint.
 - `PATCH /users/password` never checks that a code was verified. Sending `{ email, password }`
   with no prior request or verification returns `200`, and the account then logs in with that
   password — an email address alone is enough to take any account. Steps 1 and 2 are, as the

@@ -24,10 +24,21 @@ serve.py            로컬 확인용 정적 서버 (캐시 없음)
 홈으로 보냅니다 — 홈이 토큰이 없을 때 로그인으로 되돌리는 것과 같은 기준(`hasSession()`)을
 반대 방향으로 씁니다.
 
-`home.html`은 `GET /users/me`로 내 상태를 불러와 이메일 인증과 재개봉 알림 두 줄만
-보여주고, 토큰이 없거나 재발급까지 실패하면 `login.html`로 되돌립니다. 끝난 상태는 체크
-표시로, 아직인 상태는 글자로 적습니다 — 줄 이름이 이미 질문이라 "예"는 표시 하나면 되고,
-"아니오" 쪽에는 할 일이 남아 있어 말이 필요합니다.
+`home.html`은 `GET /users/me`로 내 상태를 불러와 이메일 인증 · 재개봉 알림 · 비 예보 알림 ·
+알림 위치 네 줄을 보여주고, 토큰이 없거나 재발급까지 실패하면 `login.html`로 되돌립니다.
+끝난 상태는 체크 표시로, 아직인 상태는 글자로 적습니다 — 줄 이름이 이미 질문이라 "예"는
+표시 하나면 되고, "아니오" 쪽에는 할 일이 남아 있어 말이 필요합니다.
+
+두 알림은 각각 버튼 하나로 켜고 끕니다. 켜는 쪽에만 조건이 있습니다 — 인증하지 않은
+주소로 알림을 켜면 보낼 곳이 없으므로 꺼져 있는 줄에는 버튼을 그리지 않고, 그 사람의 다음
+할 일은 바로 위 이메일 인증 줄에 있습니다. 이미 켜져 있는 줄에는 인증 여부와 상관없이
+끄기가 섭니다.
+
+비 예보는 알림 위치의 좌표로 날씨를 봅니다. 좌표를 정하지 않으면 서울을 보므로, 그 줄은
+비워 두는 대신 "서울 (기본)"이라고 적습니다. 좌표는 손으로 적는 것이 아니라 브라우저에게
+물어서 채웁니다 — "현재 위치 사용"을 누르면 브라우저가 허락을 묻고, 받은 값을 소수점 넷째
+자리에서 끊어 `PATCH /users/coordinate`로 보냅니다. "지우기"를 누르면 다시 서울 기준으로
+돌아갑니다.
 
 ## 보낸 재개봉 알림
 
@@ -147,15 +158,17 @@ var API_BASE = 로컬이면 "http://localhost:3000"
 | 로그인 | `POST /users/login` `{ email, password }` | `201` `{ accessToken, refreshToken }` |
 | 이메일 인증 | `POST /users/verify/email` (Bearer) `{ email, code }` | `201` `{ success: true }` |
 | 토큰 재발급 | `POST /auth/refresh-token` `{ refreshToken }` | `201` `{ accessToken, refreshToken }` |
-| 내 정보 | `GET /users/me` (Bearer) | `200` `{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications }` |
+| 내 정보 | `GET /users/me` (Bearer) | `200` `{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications, receiveTomorrowRainNotifications, latitude, longitude }` |
 | 인증 메일 재발송 | `POST /users/email/verification` (Bearer, 바디 없음) | `201` |
 | 재설정 코드 요청 | `POST /users/password/verification` `{ email }` | `201` |
 | 재설정 코드 인증 | `POST /users/verify/password` `{ email, code }` | `201` `{ success: true }` |
 | 비밀번호 변경 | `PATCH /users/password` `{ email, password }` | `200` |
 | 재개봉 알림 설정 | `PATCH /users/receive-reopen-box-office-notifications` (Bearer) `{ value }` | `200` |
+| 비 예보 알림 설정 | `PATCH /users/receive-tomorrow-rain` (Bearer) `{ value }` | `200` |
+| 알림 위치 설정 | `PATCH /users/coordinate` (Bearer) `{ latitude, longitude }` | `200` |
 | 일별 박스오피스 | `GET /box-office/daily` (토큰 없음) | `200` `{ boxOfficeList: [{ rank, movieNm, openDt, audiCnt, isReopen, ... }] }` |
 | 보낸 재개봉 알림 | `GET /box-office/sent` (토큰 없음) | `200` `{ sentBoxOfficeList: [{ id, createdAt, rank, movieNm, openDt, audiCnt, ... }] }` |
-| 회원 목록 | `GET /users?limit=&offset=&order=` (가드 없음) | `200` `[{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications }]` |
+| 회원 목록 | `GET /users?limit=&offset=&order=` (가드 없음) | `200` `[{ id, email, name, isAdmin, isEmailVerified, createdAt, receiveReopenBoxOfficeNotifications, receiveTomorrowRainNotifications, latitude, longitude }]` |
 | 회원 수 | `GET /users/count` (가드 없음) | `200` `{ totalUserCount }` |
 
 실패 응답은 `{ message, error, statusCode }` 형태이고, `message`는 문자열이거나
@@ -214,7 +227,11 @@ var API_BASE = 로컬이면 "http://localhost:3000"
 - accessToken이 만료되면 `ensureAccessToken()`이 `refreshToken`으로 조용히 새로 받습니다.
   재발급까지 거절되면 그때 토큰을 지우고 로그인 페이지로 돌립니다. 재발급은 페이지를
   열 때와 `authorizedFetch()`를 부를 때만 일어나므로, 탭을 열어둔 채로는 갱신되지 않습니다.
-- `GET /users`와 `GET /users/count`가 인증 없이 전체 사용자 목록을 이메일까지 반환합니다.
+- **`GET /users`가 인증 없이 전체 사용자 목록을 이메일과 좌표까지 반환합니다.**
+  알림 위치를 붙이면서 이 구멍의 값이 달라졌습니다 — 지금까지는 남의 주소였지만, 이제는
+  남이 사는 곳입니다. 좌표를 응답에서 빼거나 이 엔드포인트에 가드를 붙이는 일이 먼저이고,
+  프론트에서 할 수 있는 일은 없습니다.
+  `GET /users/count`도 토큰을 보지 않습니다.
   `limit`은 1..100 정수, `order`는 `asc`/`desc`만 받고 벗어나면 `400`에 검증 문구가 옵니다.
   `users.html`이 `isAdmin`으로 화면을 막지만 그 가드는 브라우저 안에만 있습니다 — 누가
   화면을 보는지를 정할 뿐, 누가 데이터를 읽는지는 정하지 못합니다. 서버에 가드를 붙이기
